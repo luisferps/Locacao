@@ -1,3 +1,4 @@
+// v2
 import { useState, useEffect, useMemo, useRef } from "react";
 import { api } from "./api.js";
 import Auth from "./Auth.jsx";
@@ -13,7 +14,7 @@ const statusColors = {
   Pago:"#22c55e",Pendente:"#f59e0b",Atrasado:"#ef4444",
   Repassado:"#6366f1",Aguardando:"#f59e0b"
 };
-const Badge = ({label}) => <span style={{background:(statusColors[label]||"#64748b")+"22",color:statusColors[label]||"#64748b",border:`1px solid ${(statusColors[label]||"#64748b")}44`,padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{label}</span>;
+function Badge({label}){return<span style={{background:(statusColors[label]||"#64748b")+"22",color:statusColors[label]||"#64748b",border:`1px solid ${(statusColors[label]||"#64748b")}44`,padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{label}</span>;}
 
 function Modal({title,onClose,children,wide}){
   return(
