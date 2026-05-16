@@ -13,6 +13,8 @@ export default function Auth({ onLogin }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [pendente, setPendente] = useState(false);
+
   const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
   const submit = async () => {
@@ -25,12 +27,15 @@ export default function Auth({ onLogin }) {
     }
     setLoading(true);
     try {
-      const res = mode === "login"
-        ? await api.login({ email: form.email, senha: form.senha })
-        : await api.register({ nome: form.nome, email: form.email, senha: form.senha });
-      localStorage.setItem("token", res.token);
-      localStorage.setItem("user", JSON.stringify(res.user));
-      window.location.reload();
+      if (mode === "register") {
+        await api.register({ nome: form.nome, email: form.email, senha: form.senha });
+        setPendente(true);
+      } else {
+        const res = await api.login({ email: form.email, senha: form.senha });
+        localStorage.setItem("token", res.token);
+        localStorage.setItem("user", JSON.stringify(res.user));
+        window.location.reload();
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -63,6 +68,20 @@ export default function Auth({ onLogin }) {
             {mode === "login" ? "Entre na sua conta" : "Crie sua conta"}
           </div>
         </div>
+
+        {pendente ? (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>⏳</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0", marginBottom: 8 }}>Cadastro enviado!</div>
+            <div style={{ fontSize: 14, color: "#64748b", lineHeight: 1.6, marginBottom: 20 }}>
+              Seu cadastro foi realizado com sucesso.<br />Aguarde a aprovação do administrador para acessar o sistema.
+            </div>
+            <button onClick={() => { setPendente(false); setMode("login"); setForm({ nome: "", email: "", senha: "", confirmar: "" }); }}
+              style={{ background: "none", border: "1px solid #2d3748", borderRadius: 8, color: "#94a3b8", padding: "8px 20px", cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
+              Voltar ao login
+            </button>
+          </div>
+        ) : (<>
 
         {mode === "register" && (
           <div style={{ marginBottom: 14 }}>
@@ -116,6 +135,7 @@ export default function Auth({ onLogin }) {
             style={{ background: "none", border: "none", color: "#818cf8", cursor: "pointer", fontWeight: 600, fontSize: 14, fontFamily: "inherit" }}
           >{mode === "login" ? "Cadastre-se" : "Entrar"}</button>
         </div>
+        </>)}
       </div>
     </div>
   );
