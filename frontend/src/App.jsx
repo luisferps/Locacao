@@ -93,11 +93,9 @@ export default function App() {
   const [relGerado, setRelGerado] = useState(false);
   const printRef = useRef(null);
 
-  // ── Auth gate ─────────────────────────────────────────────────────────────
-  if (!user) return <Auth onLogin={(u) => { setUser(u); }} />;
-
   // ── Load inicial ──────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!user) return;
     const loads = [api.getImoveis(), api.getRecebimentos(), api.getDespesas(), api.getRepasses()];
     if (user?.role === "admin") loads.push(api.getUsuarios());
     Promise.all(loads)
@@ -107,7 +105,10 @@ export default function App() {
       })
       .catch(() => showToast("Erro ao conectar com o servidor", "error"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [user]);
+
+  // ── Auth gate ─────────────────────────────────────────────────────────────
+  if (!user) return <Auth onLogin={(u) => { setUser(u); }} />;
 
   // ── Metrics ───────────────────────────────────────────────────────────────
   const totalAluguel = imoveis.filter(i => i.status === "Ativo").reduce((s, i) => s + Number(i.aluguel), 0);
