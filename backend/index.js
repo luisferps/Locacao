@@ -24,8 +24,10 @@ async function initDb() {
       senha TEXT NOT NULL,
       role TEXT DEFAULT 'usuario',
       ativo BOOLEAN DEFAULT true,
+      aprovado BOOLEAN DEFAULT false,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+    ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aprovado BOOLEAN DEFAULT false;
     CREATE TABLE IF NOT EXISTS imoveis (
       id SERIAL PRIMARY KEY,
       codigo TEXT, endereco TEXT, bairro TEXT, tipo TEXT,
@@ -54,6 +56,8 @@ async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+  // Garante que admins existentes estejam aprovados
+  await pool.query("UPDATE usuarios SET aprovado=true WHERE role='admin' AND aprovado=false");
   console.log("Banco inicializado.");
 }
 
@@ -81,19 +85,16 @@ const admin = (req, res, next) => {
 // AUTH
 app.post("/api/auth/register", async (req, res) => {
   try {
-    const { nome, email, senha, role } = req.body;
+    const { nome, email, senha } = req.body;
     if (!nome || !email || !senha) return res.status(400).json({ error: "Preencha todos os campos" });
     const existing = await pool.query("SELECT id FROM usuarios WHERE email=$1", [email]);
     if (existing.rows.length) return res.status(400).json({ error: "Email já cadastrado" });
     const hash = await bcrypt.hash(senha, 10);
-    const userRole = role === "admin" ? "admin" : "usuario";
-    const { rows } = await pool.query(
-      "INSERT INTO usuarios (nome,email,senha,role) VALUES ($1,$2,$3,$4) RETURNING id,nome,email,role",
-      [nome, email, hash, userRole]
+    await pool.query(
+      "INSERT INTO usuarios (nome,email,senha,role,aprovado) VALUES ($1,$2,$3,'usuario',false)",
+      [nome, email, hash]
     );
-    const user = rows[0];
-    const token = jwt.sign({ id: user.id, nome: user.nome, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
-    res.json({ token, user });
+    res.json({ ok: true, message: "Cadastro realizado! Aguarde a aprovação do administrador." });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -104,6 +105,7 @@ app.post("/api/auth/login", async (req, res) => {
     if (!rows.length) return res.status(401).json({ error: "Email ou senha incorretos" });
     const valid = await bcrypt.compare(senha, rows[0].senha);
     if (!valid) return res.status(401).json({ error: "Email ou senha incorretos" });
+    if (!rows[0].aprovado) return res.status(403).json({ error: "Sua conta ainda não foi aprovada pelo administrador." });
     const user = rows[0];
     const token = jwt.sign({ id: user.id, nome: user.nome, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
     res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, role: user.role } });
@@ -117,15 +119,15 @@ app.get("/api/auth/me", auth, async (req, res) => {
 
 // USUÁRIOS
 app.get("/api/usuarios", auth, admin, async (req, res) => {
-  const { rows } = await pool.query("SELECT id,nome,email,role,ativo,created_at FROM usuarios ORDER BY created_at DESC");
+  const { rows } = await pool.query("SELECT id,nome,email,role,ativo,aprovado,created_at FROM usuarios ORDER BY aprovado ASC, created_at DESC");
   res.json(rows.map(camelize));
 });
 
 app.put("/api/usuarios/:id", auth, admin, async (req, res) => {
-  const { nome, role, ativo } = req.body;
+  const { nome, role, ativo, aprovado } = req.body;
   const { rows } = await pool.query(
-    "UPDATE usuarios SET nome=$1,role=$2,ativo=$3 WHERE id=$4 RETURNING id,nome,email,role,ativo",
-    [nome, role, ativo, req.params.id]
+    "UPDATE usuarios SET nome=$1,role=$2,ativo=$3,aprovado=$4 WHERE id=$5 RETURNING id,nome,email,role,ativo,aprovado",
+    [nome, role, ativo, aprovado, req.params.id]
   );
   res.json(camelize(rows[0]));
 });
