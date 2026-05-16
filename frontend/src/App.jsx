@@ -617,11 +617,45 @@ export default function App() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
               <div><h2 style={{ fontWeight: 800, fontSize: 24, margin: 0 }}>Usuários</h2><p style={{ color: "#475569", fontSize: 14, marginTop: 4 }}>Gerenciar acesso ao sistema</p></div>
             </div>
+
+            {/* Pendentes de aprovação */}
+            {usuarios.filter(u => !u.aprovado).length > 0 && (
+              <div style={{ background: "#f59e0b15", border: "1px solid #f59e0b40", borderRadius: 14, padding: 16, marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#f59e0b", marginBottom: 12 }}>⏳ Aguardando aprovação ({usuarios.filter(u => !u.aprovado).length})</div>
+                {usuarios.filter(u => !u.aprovado).map(u => (
+                  <div key={u.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #1e2940" }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{u.nome}</div>
+                      <div style={{ fontSize: 12, color: "#64748b" }}>{u.email} · {fmtDate(u.createdAt)}</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button style={s.btn("#22c55e")} onClick={async () => {
+                        try {
+                          const updated = await api.updateUsuario(u.id, { nome: u.nome, role: u.role, ativo: true, aprovado: true });
+                          setUsuarios(p => p.map(x => x.id === u.id ? updated : x));
+                          showToast(`${u.nome} aprovado!`);
+                        } catch (e) { showToast(e.message, "error"); }
+                      }}>✓ Aprovar</button>
+                      <button style={{ ...s.btn("#ef4444") }} onClick={async () => {
+                        if (!confirm(`Rejeitar e excluir ${u.nome}?`)) return;
+                        try {
+                          await api.deleteUsuario(u.id);
+                          setUsuarios(p => p.filter(x => x.id !== u.id));
+                          showToast("Solicitação rejeitada");
+                        } catch (e) { showToast(e.message, "error"); }
+                      }}>✕ Rejeitar</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div style={s.card}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#64748b", marginBottom: 12 }}>Usuários ativos</div>
               <table><thead><tr>
                 <th style={s.th}>Nome</th><th style={s.th}>Email</th><th style={s.th}>Perfil</th><th style={s.th}>Status</th><th style={s.th}>Cadastro</th><th style={s.th}></th>
               </tr></thead>
-                <tbody>{usuarios.map(u => (
+                <tbody>{usuarios.filter(u => u.aprovado).map(u => (
                   <tr key={u.id}>
                     <td style={s.td}>{u.nome}</td>
                     <td style={{ ...s.td, color: "#64748b" }}>{u.email}</td>
@@ -641,14 +675,14 @@ export default function App() {
                           <>
                             <button style={s.btnGhost} onClick={async () => {
                               try {
-                                const updated = await api.updateUsuario(u.id, { nome: u.nome, role: u.role === "admin" ? "usuario" : "admin", ativo: u.ativo });
+                                const updated = await api.updateUsuario(u.id, { nome: u.nome, role: u.role === "admin" ? "usuario" : "admin", ativo: u.ativo, aprovado: u.aprovado });
                                 setUsuarios(p => p.map(x => x.id === u.id ? updated : x));
                                 showToast("Perfil alterado!");
                               } catch (e) { showToast(e.message, "error"); }
                             }}>{u.role === "admin" ? "→ Usuário" : "→ Admin"}</button>
                             <button style={s.btnGhost} onClick={async () => {
                               try {
-                                const updated = await api.updateUsuario(u.id, { nome: u.nome, role: u.role, ativo: !u.ativo });
+                                const updated = await api.updateUsuario(u.id, { nome: u.nome, role: u.role, ativo: !u.ativo, aprovado: u.aprovado });
                                 setUsuarios(p => p.map(x => x.id === u.id ? updated : x));
                                 showToast(u.ativo ? "Usuário desativado" : "Usuário ativado");
                               } catch (e) { showToast(e.message, "error"); }
@@ -668,7 +702,7 @@ export default function App() {
                   </tr>
                 ))}</tbody>
               </table>
-              {usuarios.length === 0 && <div style={{ textAlign: "center", color: "#475569", padding: "32px 0", fontSize: 14 }}>Nenhum usuário cadastrado ainda.</div>}
+              {usuarios.filter(u => u.aprovado).length === 0 && <div style={{ textAlign: "center", color: "#475569", padding: "32px 0", fontSize: 14 }}>Nenhum usuário aprovado ainda.</div>}
             </div>
           </div>
         )}
