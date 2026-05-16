@@ -630,7 +630,7 @@ export default function App(){
             <F label="Duração (meses) *" h><input style={IS} type="number" value={formContrato.duracaoMeses} onChange={e=>setFormContrato(p=>({...p,duracaoMeses:e.target.value}))} placeholder="Ex: 30"/></F>
             {formContrato.inicio&&formContrato.duracaoMeses&&(
               <F label="Término previsto" h>
-                <input style={{...IS,color:"#94a3b8"}} readOnly value={()=>{const d=new Date(formContrato.inicio);d.setMonth(d.getMonth()+ +formContrato.duracaoMeses);return d.toLocaleDateString("pt-BR");}()}/>
+                <input style={{...IS,color:"#94a3b8"}} readOnly value={(() => {const d=new Date(formContrato.inicio);d.setMonth(d.getMonth()+ +formContrato.duracaoMeses);return d.toLocaleDateString("pt-BR");})()}/>
               </F>
             )}
             <F label="Status" h><select style={IS} value={formContrato.status} onChange={e=>setFormContrato(p=>({...p,status:e.target.value}))}>{["Ativo","Encerrado","Inativo"].map(t=><option key={t}>{t}</option>)}</select></F>
