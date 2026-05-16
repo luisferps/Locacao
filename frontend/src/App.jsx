@@ -31,9 +31,9 @@ function Modal({title,onClose,children,wide}){
 
 const IS = {width:"100%",background:"#0f1623",border:"1px solid #2d3748",borderRadius:8,color:"#e2e8f0",padding:"8px 12px",fontSize:14,boxSizing:"border-box",outline:"none",fontFamily:"inherit"};
 const LS = {color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4};
-const F = ({label,children,h})=><div style={{marginBottom:14,flex:h?"1 1 45%":"1 1 100%"}}><label style={LS}>{label}</label>{children}</div>;
-const R = ({children})=><div style={{display:"flex",gap:16,flexWrap:"wrap"}}>{children}</div>;
-const ST = ({children})=><div style={{fontSize:11,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:2,margin:"18px 0 10px",paddingBottom:6,borderBottom:"1px solid #1e2940"}}>{children}</div>;
+function F({label,children,h}){return<div style={{marginBottom:14,flex:h?"1 1 45%":"1 1 100%"}}><label style={LS}>{label}</label>{children}</div>;}
+function R({children}){return<div style={{display:"flex",gap:16,flexWrap:"wrap"}}>{children}</div>;}
+function ST({children}){return<div style={{fontSize:11,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:2,margin:"18px 0 10px",paddingBottom:6,borderBottom:"1px solid #1e2940"}}>{children}</div>;}
 
 function PF({label,vk,pk,form,set}){
   return(
