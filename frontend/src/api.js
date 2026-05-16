@@ -16,7 +16,12 @@ const req = async (method, path, body, isFormData = false) => {
   return res.json();
 };
 
-const fd = (file, field) => { const f = new FormData(); f.append(field, file); return f; };
+const fd = (file, field, extra) => {
+  const f = new FormData();
+  f.append(field, file);
+  if (extra) Object.entries(extra).forEach(([k,v]) => f.append(k, v));
+  return f;
+};
 
 export const api = {
   login: (d) => req("POST", "/api/auth/login", d),
@@ -25,10 +30,18 @@ export const api = {
   getUsuarios: () => req("GET", "/api/usuarios"),
   updateUsuario: (id, d) => req("PUT", `/api/usuarios/${id}`, d),
   deleteUsuario: (id) => req("DELETE", `/api/usuarios/${id}`),
+  getProprietarios: () => req("GET", "/api/proprietarios"),
+  createProprietario: (d) => req("POST", "/api/proprietarios", d),
+  updateProprietario: (id, d) => req("PUT", `/api/proprietarios/${id}`, d),
+  deleteProprietario: (id) => req("DELETE", `/api/proprietarios/${id}`),
   getImoveis: () => req("GET", "/api/imoveis"),
   createImovel: (d) => req("POST", "/api/imoveis", d),
   updateImovel: (id, d) => req("PUT", `/api/imoveis/${id}`, d),
   deleteImovel: (id) => req("DELETE", `/api/imoveis/${id}`),
+  getDocumentos: (imovelId) => req("GET", `/api/imoveis/${imovelId}/documentos`),
+  uploadDocumento: (imovelId, tipo, file) => req("POST", `/api/imoveis/${imovelId}/documentos`, fd(file, "arquivo", { tipo }), true),
+  getDocumentoUrl: (id) => req("GET", `/api/documentos/${id}/url`),
+  deleteDocumento: (id) => req("DELETE", `/api/documentos/${id}`),
   getContratos: (imovelId) => req("GET", `/api/contratos${imovelId ? `?imovelId=${imovelId}` : ""}`),
   createContrato: (d) => req("POST", "/api/contratos", d),
   updateContrato: (id, d) => req("PUT", `/api/contratos/${id}`, d),
