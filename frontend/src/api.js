@@ -5,8 +5,7 @@ const req = async (method, path, body, isFormData = false) => {
   const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
   if (!isFormData) headers["Content-Type"] = "application/json";
   const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
+    method, headers,
     body: isFormData ? body : body ? JSON.stringify(body) : undefined,
   });
   if (res.status === 401) { localStorage.clear(); window.location.reload(); return; }
@@ -17,32 +16,37 @@ const req = async (method, path, body, isFormData = false) => {
   return res.json();
 };
 
+const fd = (file, field) => { const f = new FormData(); f.append(field, file); return f; };
+
 export const api = {
-  login: (data) => req("POST", "/api/auth/login", data),
-  register: (data) => req("POST", "/api/auth/register", data),
-  me: () => req("GET", "/api/auth/me"),
+  login: (d) => req("POST", "/api/auth/login", d),
+  register: (d) => req("POST", "/api/auth/register", d),
   getDashboard: () => req("GET", "/api/dashboard"),
   getUsuarios: () => req("GET", "/api/usuarios"),
-  updateUsuario: (id, data) => req("PUT", `/api/usuarios/${id}`, data),
+  updateUsuario: (id, d) => req("PUT", `/api/usuarios/${id}`, d),
   deleteUsuario: (id) => req("DELETE", `/api/usuarios/${id}`),
   getImoveis: () => req("GET", "/api/imoveis"),
-  createImovel: (data) => req("POST", "/api/imoveis", data),
-  updateImovel: (id, data) => req("PUT", `/api/imoveis/${id}`, data),
+  createImovel: (d) => req("POST", "/api/imoveis", d),
+  updateImovel: (id, d) => req("PUT", `/api/imoveis/${id}`, d),
   deleteImovel: (id) => req("DELETE", `/api/imoveis/${id}`),
-  uploadContrato: (id, file) => {
-    const fd = new FormData(); fd.append("contrato", file);
-    return req("POST", `/api/imoveis/${id}/contrato`, fd, true);
-  },
-  getContratoUrl: (id) => req("GET", `/api/imoveis/${id}/contrato/url`),
-  getRecebimentos: () => req("GET", "/api/recebimentos"),
-  createRecebimento: (data) => req("POST", "/api/recebimentos", data),
-  updateRecebimento: (id, data) => req("PUT", `/api/recebimentos/${id}`, data),
-  deleteRecebimento: (id) => req("DELETE", `/api/recebimentos/${id}`),
+  getContratos: (imovelId) => req("GET", `/api/contratos${imovelId ? `?imovelId=${imovelId}` : ""}`),
+  createContrato: (d) => req("POST", "/api/contratos", d),
+  updateContrato: (id, d) => req("PUT", `/api/contratos/${id}`, d),
+  deleteContrato: (id) => req("DELETE", `/api/contratos/${id}`),
+  uploadContratoPdf: (id, file) => req("POST", `/api/contratos/${id}/pdf`, fd(file, "contrato"), true),
+  getContratoPdfUrl: (id) => req("GET", `/api/contratos/${id}/pdf/url`),
+  getReajustes: (contratoId) => req("GET", `/api/contratos/${contratoId}/reajustes`),
+  createReajuste: (contratoId, d) => req("POST", `/api/contratos/${contratoId}/reajustes`, d),
+  deleteReajuste: (id) => req("DELETE", `/api/reajustes/${id}`),
+  getParcelas: (contratoId) => req("GET", `/api/contratos/${contratoId}/parcelas`),
+  updateParcela: (id, d) => req("PUT", `/api/parcelas/${id}`, d),
   getDespesas: () => req("GET", "/api/despesas"),
-  createDespesa: (data) => req("POST", "/api/despesas", data),
-  updateDespesa: (id, data) => req("PUT", `/api/despesas/${id}`, data),
+  createDespesa: (d) => req("POST", "/api/despesas", d),
+  updateDespesa: (id, d) => req("PUT", `/api/despesas/${id}`, d),
   deleteDespesa: (id) => req("DELETE", `/api/despesas/${id}`),
   getRepasses: () => req("GET", "/api/repasses"),
-  createRepasse: (data) => req("POST", "/api/repasses", data),
-  deleteRepasse: (id) => req("DELETE", `/api/repasses/${id}`),
+  createRepasse: (d) => req("POST", "/api/repasses", d),
+  updateRepasse: (id, d) => req("PUT", `/api/repasses/${id}`, d),
+  uploadComprovante: (id, file) => req("POST", `/api/repasses/${id}/comprovante`, fd(file, "comprovante"), true),
+  getComprovanteUrl: (id) => req("GET", `/api/repasses/${id}/comprovante/url`),
 };
