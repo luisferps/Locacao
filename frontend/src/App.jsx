@@ -328,7 +328,7 @@ export default function App() {
             {isAdmin ? "Administrador" : "Usuário"} · {imoveis.filter(i => i.status === "Ativo").length} imóveis
           </div>
           <button
-            onClick={() => { localStorage.clear(); setUser(null); setLoading(true); setImoveis([]); setRecebimentos([]); setDespesas([]); setRepasses([]); setUsuarios([]); }}
+            onClick={() => { localStorage.clear(); window.location.reload(); }}
             style={{ ...s.btnGhost, fontSize: 12, padding: "5px 12px", color: "#ef4444", borderColor: "#ef444430", width: "100%" }}
           >Sair</button>
         </div>
