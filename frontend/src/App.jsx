@@ -108,6 +108,7 @@ export default function App(){
   const [modalProprietario,setModalProprietario]=useState(null);
   const emptyProprietario={nome:"",cpfCnpj:"",email:"",telefone:"",banco:"",agencia:"",conta:"",tipoConta:"Corrente",pix:""};
   const [formProprietario,setFormProprietario]=useState(emptyProprietario);
+  const emptyImovel={codigo:"",endereco:"",bairro:"",tipo:"Apartamento",area:"",nomeCondominio:"",bloco:"",apartamento:"",quartos:"",mobiliado:"Sem móveis",valorIdeal:"",telPortaria:"",telContabilidade:"",telCobranca:"",telSindico:"",proprietarioId:""};
   const [formImovel,setFormImovel]=useState(emptyImovel);
 
   const emptyContrato={imovelId:"",locatario:"",telefoneLocatario:"",locador:"",telefoneLocador:"",aluguelInicial:"",aluguelPagaPor:"Locatário",condominio:"",condominioPagaPor:"Locatário",iptu:"",iptuPagaPor:"Locatário",taxaAdmPct:10,vencimento:"",formaPagamento:"Pix",inicio:"",duracaoMeses:"",status:"Ativo",multaRescisaoPct:"",multaAtrasoPct:"",jurosAtrasoPct:"",honorariosPct:"",honorariosDias:"",honorariosAdvPct:"",honorariosAdvDias:""};
@@ -297,8 +298,6 @@ export default function App(){
     td:{padding:"11px 14px",fontSize:13,borderTop:"1px solid #1e2940",color:"#cbd5e1"},
     statCard:{background:"#131929",border:"1px solid #1e2940",borderRadius:14,padding:"18px 20px",flex:1,minWidth:130},
   };
-
-  const emptyImovel={codigo:"",endereco:"",bairro:"",tipo:"Apartamento",area:"",nomeCondominio:"",bloco:"",apartamento:"",quartos:"",mobiliado:"Sem móveis",valorIdeal:"",telPortaria:"",telContabilidade:"",telCobranca:"",telSindico:"",proprietarioId:""};
 
   const navItems=[
     {id:"dashboard",icon:"◈",label:"Dashboard"},
