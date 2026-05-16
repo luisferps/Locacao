@@ -30,7 +30,7 @@ export default function Auth({ onLogin }) {
         : await api.register({ nome: form.nome, email: form.email, senha: form.senha });
       localStorage.setItem("token", res.token);
       localStorage.setItem("user", JSON.stringify(res.user));
-      onLogin(res.user);
+      window.location.reload();
     } catch (err) {
       setError(err.message);
     } finally {
