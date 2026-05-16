@@ -4,7 +4,7 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
-const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { v4: uuidv4 } = require("uuid");
 
@@ -19,7 +19,6 @@ const pool = new Pool({
 
 const JWT_SECRET = process.env.JWT_SECRET || "imobiliaria_secret_key_2025";
 
-// R2 Client
 const r2 = new S3Client({
   region: "auto",
   endpoint: `https://${process.env.CF_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -29,82 +28,77 @@ const r2 = new S3Client({
   },
 });
 const R2_BUCKET = process.env.CF_BUCKET_NAME || "imobiliaria-contratos";
-
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS usuarios (
-      id SERIAL PRIMARY KEY,
-      nome TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      senha TEXT NOT NULL,
-      role TEXT DEFAULT 'usuario',
-      ativo BOOLEAN DEFAULT true,
-      aprovado BOOLEAN DEFAULT false,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      id SERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT UNIQUE NOT NULL,
+      senha TEXT NOT NULL, role TEXT DEFAULT 'usuario', ativo BOOLEAN DEFAULT true,
+      aprovado BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT NOW()
     );
     ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aprovado BOOLEAN DEFAULT false;
 
     CREATE TABLE IF NOT EXISTS imoveis (
+      id SERIAL PRIMARY KEY, codigo TEXT UNIQUE, endereco TEXT, bairro TEXT,
+      tipo TEXT, area NUMERIC, created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS contratos (
       id SERIAL PRIMARY KEY,
-      codigo TEXT, endereco TEXT, bairro TEXT, tipo TEXT,
-      locatario TEXT, locador TEXT,
-      aluguel NUMERIC, aluguel_paga_por TEXT DEFAULT 'Locatário',
+      imovel_id INT REFERENCES imoveis(id) ON DELETE CASCADE,
+      locatario TEXT, telefone_locatario TEXT,
+      locador TEXT, telefone_locador TEXT,
+      aluguel_inicial NUMERIC, aluguel_atual NUMERIC,
+      aluguel_paga_por TEXT DEFAULT 'Locatário',
       condominio NUMERIC DEFAULT 0, condominio_paga_por TEXT DEFAULT 'Locatário',
       iptu NUMERIC DEFAULT 0, iptu_paga_por TEXT DEFAULT 'Locatário',
-      vencimento INT,
-      status TEXT DEFAULT 'Ativo',
+      taxa_adm_pct NUMERIC DEFAULT 10,
+      vencimento INT, forma_pagamento TEXT DEFAULT 'Pix',
       inicio DATE, duracao_meses INT, fim DATE,
-      telefone_locatario TEXT, telefone_locador TEXT,
-      taxa_adm NUMERIC DEFAULT 10,
-      multa_rescisao NUMERIC DEFAULT 0,
-      multa_atraso NUMERIC DEFAULT 0,
-      juros_atraso NUMERIC DEFAULT 0,
+      status TEXT DEFAULT 'Ativo',
+      multa_rescisao_pct NUMERIC DEFAULT 0,
+      multa_atraso_pct NUMERIC DEFAULT 0,
+      juros_atraso_pct NUMERIC DEFAULT 0,
       honorarios_pct NUMERIC DEFAULT 0, honorarios_dias INT DEFAULT 0,
       honorarios_adv_pct NUMERIC DEFAULT 0, honorarios_adv_dias INT DEFAULT 0,
-      forma_pagamento TEXT DEFAULT 'Todos',
-      contrato_pdf_key TEXT,
-      contrato_pdf_nome TEXT,
+      contrato_pdf_key TEXT, contrato_pdf_nome TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS condominio NUMERIC DEFAULT 0;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS condominio_paga_por TEXT DEFAULT 'Locatário';
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS iptu NUMERIC DEFAULT 0;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS iptu_paga_por TEXT DEFAULT 'Locatário';
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS aluguel_paga_por TEXT DEFAULT 'Locatário';
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS duracao_meses INT;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS fim DATE;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS multa_rescisao NUMERIC DEFAULT 0;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS multa_atraso NUMERIC DEFAULT 0;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS juros_atraso NUMERIC DEFAULT 0;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS honorarios_pct NUMERIC DEFAULT 0;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS honorarios_dias INT DEFAULT 0;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS honorarios_adv_pct NUMERIC DEFAULT 0;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS honorarios_adv_dias INT DEFAULT 0;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS forma_pagamento TEXT DEFAULT 'Todos';
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS contrato_pdf_key TEXT;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS contrato_pdf_nome TEXT;
 
-    CREATE TABLE IF NOT EXISTS recebimentos (
+    CREATE TABLE IF NOT EXISTS reajustes (
       id SERIAL PRIMARY KEY,
-      imovel_id INT REFERENCES imoveis(id) ON DELETE CASCADE,
-      data DATE, valor NUMERIC, tipo TEXT, status TEXT, obs TEXT,
+      contrato_id INT REFERENCES contratos(id) ON DELETE CASCADE,
+      data_reajuste DATE, indice TEXT, periodo_inicio DATE, periodo_fim DATE,
+      valor_anterior NUMERIC, percentual NUMERIC, valor_novo NUMERIC,
+      obs TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS parcelas (
+      id SERIAL PRIMARY KEY,
+      contrato_id INT REFERENCES contratos(id) ON DELETE CASCADE,
+      competencia TEXT, vencimento DATE, valor NUMERIC,
+      valor_recebido NUMERIC, data_recebimento DATE,
+      status TEXT DEFAULT 'Pendente', obs TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
     CREATE TABLE IF NOT EXISTS despesas (
       id SERIAL PRIMARY KEY,
-      imovel_id INT REFERENCES imoveis(id) ON DELETE CASCADE,
+      contrato_id INT REFERENCES contratos(id) ON DELETE CASCADE,
       data DATE, valor NUMERIC, tipo TEXT, descricao TEXT, status TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
     CREATE TABLE IF NOT EXISTS repasses (
       id SERIAL PRIMARY KEY,
-      imovel_id INT REFERENCES imoveis(id) ON DELETE CASCADE,
-      data DATE, mes TEXT, valor_bruto NUMERIC,
-      taxa_adm NUMERIC, valor_liquido NUMERIC, status TEXT,
-      forma_pagamento TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      contrato_id INT REFERENCES contratos(id) ON DELETE CASCADE,
+      competencia TEXT, data_repasse DATE,
+      valor_recebido NUMERIC, total_despesas NUMERIC,
+      taxa_adm NUMERIC, valor_liquido NUMERIC,
+      forma_pagamento TEXT, status TEXT DEFAULT 'Pendente',
+      comprovante_key TEXT, comprovante_nome TEXT,
+      obs TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
   await pool.query("UPDATE usuarios SET aprovado=true WHERE role='admin' AND aprovado=false");
@@ -112,6 +106,7 @@ async function initDb() {
 }
 
 const camelize = (row) => {
+  if (!row) return null;
   const result = {};
   for (const key in row) {
     const camel = key.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
@@ -128,11 +123,20 @@ const auth = (req, res, next) => {
 };
 
 const admin = (req, res, next) => {
-  if (req.user.role !== "admin") return res.status(403).json({ error: "Acesso restrito a administradores" });
+  if (req.user.role !== "admin") return res.status(403).json({ error: "Acesso restrito" });
   next();
 };
 
-// AUTH
+const uploadR2 = async (buffer, key, contentType) => {
+  await r2.send(new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, Body: buffer, ContentType: contentType }));
+  return key;
+};
+
+const getR2Url = async (key) => {
+  return getSignedUrl(r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }), { expiresIn: 3600 });
+};
+
+// ── AUTH ─────────────────────────────────────────────────────────────────────
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { nome, email, senha } = req.body;
@@ -141,7 +145,7 @@ app.post("/api/auth/register", async (req, res) => {
     if (existing.rows.length) return res.status(400).json({ error: "Email já cadastrado" });
     const hash = await bcrypt.hash(senha, 10);
     await pool.query("INSERT INTO usuarios (nome,email,senha,role,aprovado) VALUES ($1,$2,$3,'usuario',false)", [nome, email, hash]);
-    res.json({ ok: true, message: "Cadastro realizado! Aguarde a aprovação do administrador." });
+    res.json({ ok: true, message: "Cadastro realizado! Aguarde a aprovação." });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -152,29 +156,21 @@ app.post("/api/auth/login", async (req, res) => {
     if (!rows.length) return res.status(401).json({ error: "Email ou senha incorretos" });
     const valid = await bcrypt.compare(senha, rows[0].senha);
     if (!valid) return res.status(401).json({ error: "Email ou senha incorretos" });
-    if (!rows[0].aprovado) return res.status(403).json({ error: "Sua conta ainda não foi aprovada pelo administrador." });
+    if (!rows[0].aprovado) return res.status(403).json({ error: "Conta não aprovada pelo administrador." });
     const user = rows[0];
     const token = jwt.sign({ id: user.id, nome: user.nome, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
     res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, role: user.role } });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get("/api/auth/me", auth, async (req, res) => {
-  const { rows } = await pool.query("SELECT id,nome,email,role FROM usuarios WHERE id=$1", [req.user.id]);
-  res.json(camelize(rows[0]));
-});
-
-// USUÁRIOS
+// ── USUÁRIOS ──────────────────────────────────────────────────────────────────
 app.get("/api/usuarios", auth, admin, async (req, res) => {
   const { rows } = await pool.query("SELECT id,nome,email,role,ativo,aprovado,created_at FROM usuarios ORDER BY aprovado ASC, created_at DESC");
   res.json(rows.map(camelize));
 });
 app.put("/api/usuarios/:id", auth, admin, async (req, res) => {
   const { nome, role, ativo, aprovado } = req.body;
-  const { rows } = await pool.query(
-    "UPDATE usuarios SET nome=$1,role=$2,ativo=$3,aprovado=$4 WHERE id=$5 RETURNING id,nome,email,role,ativo,aprovado",
-    [nome, role, ativo, aprovado, req.params.id]
-  );
+  const { rows } = await pool.query("UPDATE usuarios SET nome=$1,role=$2,ativo=$3,aprovado=$4 WHERE id=$5 RETURNING id,nome,email,role,ativo,aprovado", [nome, role, ativo, aprovado, req.params.id]);
   res.json(camelize(rows[0]));
 });
 app.delete("/api/usuarios/:id", auth, admin, async (req, res) => {
@@ -183,139 +179,233 @@ app.delete("/api/usuarios/:id", auth, admin, async (req, res) => {
   res.json({ ok: true });
 });
 
-// IMÓVEIS
+// ── IMÓVEIS ───────────────────────────────────────────────────────────────────
 app.get("/api/imoveis", auth, async (req, res) => {
-  const { rows } = await pool.query("SELECT * FROM imoveis ORDER BY id");
+  const { rows } = await pool.query(`
+    SELECT i.*, COUNT(c.id) as total_contratos,
+    (SELECT c2.status FROM contratos c2 WHERE c2.imovel_id=i.id ORDER BY c2.created_at DESC LIMIT 1) as status_atual
+    FROM imoveis i LEFT JOIN contratos c ON c.imovel_id=i.id
+    GROUP BY i.id ORDER BY i.id
+  `);
   res.json(rows.map(camelize));
 });
-
 app.post("/api/imoveis", auth, admin, async (req, res) => {
-  const f = req.body;
-  const fim = f.inicio && f.duracaoMeses ? (() => {
-    const d = new Date(f.inicio); d.setMonth(d.getMonth() + +f.duracaoMeses); return d.toISOString().split("T")[0];
-  })() : null;
-  const { rows } = await pool.query(
-    `INSERT INTO imoveis (codigo,endereco,bairro,tipo,locatario,locador,aluguel,aluguel_paga_por,condominio,condominio_paga_por,iptu,iptu_paga_por,vencimento,status,inicio,duracao_meses,fim,telefone_locatario,telefone_locador,taxa_adm,multa_rescisao,multa_atraso,juros_atraso,honorarios_pct,honorarios_dias,honorarios_adv_pct,honorarios_adv_dias,forma_pagamento)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28) RETURNING *`,
-    [f.codigo,f.endereco,f.bairro,f.tipo,f.locatario,f.locador,f.aluguel,f.aluguelPagaPor||'Locatário',f.condominio||0,f.condominioPagaPor||'Locatário',f.iptu||0,f.iptuPagaPor||'Locatário',f.vencimento,f.status,f.inicio||null,f.duracaoMeses||null,fim,f.telefoneLocatario,f.telefoneLocador,f.taxaAdm,f.multaRescisao||0,f.multaAtraso||0,f.jurosAtraso||0,f.honorariosPct||0,f.honorariosDias||0,f.honorariosAdvPct||0,f.honorariosAdvDias||0,f.formaPagamento||'Todos']
-  );
+  const { codigo, endereco, bairro, tipo, area } = req.body;
+  const { rows } = await pool.query("INSERT INTO imoveis (codigo,endereco,bairro,tipo,area) VALUES ($1,$2,$3,$4,$5) RETURNING *", [codigo, endereco, bairro, tipo, area]);
   res.json(camelize(rows[0]));
 });
-
 app.put("/api/imoveis/:id", auth, admin, async (req, res) => {
-  const f = req.body;
-  const fim = f.inicio && f.duracaoMeses ? (() => {
-    const d = new Date(f.inicio); d.setMonth(d.getMonth() + +f.duracaoMeses); return d.toISOString().split("T")[0];
-  })() : null;
-  const { rows } = await pool.query(
-    `UPDATE imoveis SET codigo=$1,endereco=$2,bairro=$3,tipo=$4,locatario=$5,locador=$6,aluguel=$7,aluguel_paga_por=$8,condominio=$9,condominio_paga_por=$10,iptu=$11,iptu_paga_por=$12,vencimento=$13,status=$14,inicio=$15,duracao_meses=$16,fim=$17,telefone_locatario=$18,telefone_locador=$19,taxa_adm=$20,multa_rescisao=$21,multa_atraso=$22,juros_atraso=$23,honorarios_pct=$24,honorarios_dias=$25,honorarios_adv_pct=$26,honorarios_adv_dias=$27,forma_pagamento=$28 WHERE id=$29 RETURNING *`,
-    [f.codigo,f.endereco,f.bairro,f.tipo,f.locatario,f.locador,f.aluguel,f.aluguelPagaPor||'Locatário',f.condominio||0,f.condominioPagaPor||'Locatário',f.iptu||0,f.iptuPagaPor||'Locatário',f.vencimento,f.status,f.inicio||null,f.duracaoMeses||null,fim,f.telefoneLocatario,f.telefoneLocador,f.taxaAdm,f.multaRescisao||0,f.multaAtraso||0,f.jurosAtraso||0,f.honorariosPct||0,f.honorariosDias||0,f.honorariosAdvPct||0,f.honorariosAdvDias||0,f.formaPagamento||'Todos',req.params.id]
-  );
+  const { codigo, endereco, bairro, tipo, area } = req.body;
+  const { rows } = await pool.query("UPDATE imoveis SET codigo=$1,endereco=$2,bairro=$3,tipo=$4,area=$5 WHERE id=$6 RETURNING *", [codigo, endereco, bairro, tipo, area, req.params.id]);
   res.json(camelize(rows[0]));
 });
-
 app.delete("/api/imoveis/:id", auth, admin, async (req, res) => {
   await pool.query("DELETE FROM imoveis WHERE id=$1", [req.params.id]);
   res.json({ ok: true });
 });
 
-// UPLOAD CONTRATO PDF
-app.post("/api/imoveis/:id/contrato", auth, admin, upload.single("contrato"), async (req, res) => {
+// ── CONTRATOS ─────────────────────────────────────────────────────────────────
+app.get("/api/contratos", auth, async (req, res) => {
+  const imovelId = req.query.imovelId;
+  const q = imovelId
+    ? "SELECT c.*,i.codigo,i.endereco,i.bairro,i.tipo FROM contratos c JOIN imoveis i ON i.id=c.imovel_id WHERE c.imovel_id=$1 ORDER BY c.created_at DESC"
+    : "SELECT c.*,i.codigo,i.endereco,i.bairro,i.tipo FROM contratos c JOIN imoveis i ON i.id=c.imovel_id ORDER BY c.created_at DESC";
+  const { rows } = await pool.query(q, imovelId ? [imovelId] : []);
+  res.json(rows.map(camelize));
+});
+
+app.post("/api/contratos", auth, admin, async (req, res) => {
+  try {
+    const f = req.body;
+    const fim = f.inicio && f.duracaoMeses ? (() => {
+      const d = new Date(f.inicio); d.setMonth(d.getMonth() + +f.duracaoMeses); return d.toISOString().split("T")[0];
+    })() : null;
+    const { rows } = await pool.query(
+      `INSERT INTO contratos (imovel_id,locatario,telefone_locatario,locador,telefone_locador,aluguel_inicial,aluguel_atual,aluguel_paga_por,condominio,condominio_paga_por,iptu,iptu_paga_por,taxa_adm_pct,vencimento,forma_pagamento,inicio,duracao_meses,fim,status,multa_rescisao_pct,multa_atraso_pct,juros_atraso_pct,honorarios_pct,honorarios_dias,honorarios_adv_pct,honorarios_adv_dias)
+       VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,
+      [f.imovelId,f.locatario,f.telefoneLocatario,f.locador,f.telefoneLocador,f.aluguelInicial,f.aluguelPagaPor||'Locatário',f.condominio||0,f.condominioPagaPor||'Locatário',f.iptu||0,f.iptuPagaPor||'Locatário',f.taxaAdmPct||10,f.vencimento,f.formaPagamento||'Pix',f.inicio||null,f.duracaoMeses||null,fim,f.status||'Ativo',f.multaRescisaoPct||0,f.multaAtrasoPct||0,f.jurosAtrasoPct||0,f.honorariosPct||0,f.honorariosDias||0,f.honorariosAdvPct||0,f.honorariosAdvDias||0]
+    );
+    const contrato = rows[0];
+
+    // Gerar parcelas mensais automaticamente
+    if (f.inicio && f.duracaoMeses && f.vencimento) {
+      const parcelas = [];
+      for (let i = 0; i < +f.duracaoMeses; i++) {
+        const dataVenc = new Date(f.inicio);
+        dataVenc.setMonth(dataVenc.getMonth() + i);
+        dataVenc.setDate(+f.vencimento);
+        const comp = `${String(dataVenc.getMonth() + 1).padStart(2,'0')}/${dataVenc.getFullYear()}`;
+        parcelas.push([contrato.id, comp, dataVenc.toISOString().split('T')[0], f.aluguelInicial, 'Pendente']);
+      }
+      for (const p of parcelas) {
+        await pool.query("INSERT INTO parcelas (contrato_id,competencia,vencimento,valor,status) VALUES ($1,$2,$3,$4,$5)", p);
+      }
+    }
+    res.json(camelize(contrato));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put("/api/contratos/:id", auth, admin, async (req, res) => {
+  const f = req.body;
+  const fim = f.inicio && f.duracaoMeses ? (() => {
+    const d = new Date(f.inicio); d.setMonth(d.getMonth() + +f.duracaoMeses); return d.toISOString().split("T")[0];
+  })() : null;
+  const { rows } = await pool.query(
+    `UPDATE contratos SET locatario=$1,telefone_locatario=$2,locador=$3,telefone_locador=$4,aluguel_atual=$5,aluguel_paga_por=$6,condominio=$7,condominio_paga_por=$8,iptu=$9,iptu_paga_por=$10,taxa_adm_pct=$11,vencimento=$12,forma_pagamento=$13,inicio=$14,duracao_meses=$15,fim=$16,status=$17,multa_rescisao_pct=$18,multa_atraso_pct=$19,juros_atraso_pct=$20,honorarios_pct=$21,honorarios_dias=$22,honorarios_adv_pct=$23,honorarios_adv_dias=$24 WHERE id=$25 RETURNING *`,
+    [f.locatario,f.telefoneLocatario,f.locador,f.telefoneLocador,f.aluguelAtual,f.aluguelPagaPor||'Locatário',f.condominio||0,f.condominioPagaPor||'Locatário',f.iptu||0,f.iptuPagaPor||'Locatário',f.taxaAdmPct||10,f.vencimento,f.formaPagamento||'Pix',f.inicio||null,f.duracaoMeses||null,fim,f.status||'Ativo',f.multaRescisaoPct||0,f.multaAtrasoPct||0,f.jurosAtrasoPct||0,f.honorariosPct||0,f.honorariosDias||0,f.honorariosAdvPct||0,f.honorariosAdvDias||0,req.params.id]
+  );
+  res.json(camelize(rows[0]));
+});
+
+app.delete("/api/contratos/:id", auth, admin, async (req, res) => {
+  await pool.query("DELETE FROM contratos WHERE id=$1", [req.params.id]);
+  res.json({ ok: true });
+});
+
+// Upload contrato PDF
+app.post("/api/contratos/:id/pdf", auth, admin, upload.single("contrato"), async (req, res) => {
   try {
     const key = `contratos/${req.params.id}-${uuidv4()}.pdf`;
-    await r2.send(new PutObjectCommand({
-      Bucket: R2_BUCKET, Key: key,
-      Body: req.file.buffer, ContentType: "application/pdf",
-    }));
-    await pool.query("UPDATE imoveis SET contrato_pdf_key=$1, contrato_pdf_nome=$2 WHERE id=$3", [key, req.file.originalname, req.params.id]);
+    await uploadR2(req.file.buffer, key, "application/pdf");
+    await pool.query("UPDATE contratos SET contrato_pdf_key=$1, contrato_pdf_nome=$2 WHERE id=$3", [key, req.file.originalname, req.params.id]);
     res.json({ ok: true, key, nome: req.file.originalname });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get("/api/imoveis/:id/contrato/url", auth, async (req, res) => {
+app.get("/api/contratos/:id/pdf/url", auth, async (req, res) => {
   try {
-    const { rows } = await pool.query("SELECT contrato_pdf_key FROM imoveis WHERE id=$1", [req.params.id]);
-    if (!rows[0]?.contrato_pdf_key) return res.status(404).json({ error: "Nenhum contrato" });
-    const url = await getSignedUrl(r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: rows[0].contrato_pdf_key }), { expiresIn: 3600 });
+    const { rows } = await pool.query("SELECT contrato_pdf_key FROM contratos WHERE id=$1", [req.params.id]);
+    if (!rows[0]?.contrato_pdf_key) return res.status(404).json({ error: "Nenhum PDF" });
+    const url = await getR2Url(rows[0].contrato_pdf_key);
     res.json({ url });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// RECEBIMENTOS
-app.get("/api/recebimentos", auth, async (req, res) => {
-  const { rows } = await pool.query("SELECT * FROM recebimentos ORDER BY data DESC");
+// ── REAJUSTES ─────────────────────────────────────────────────────────────────
+app.get("/api/contratos/:id/reajustes", auth, async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM reajustes WHERE contrato_id=$1 ORDER BY data_reajuste DESC", [req.params.id]);
   res.json(rows.map(camelize));
 });
-app.post("/api/recebimentos", auth, async (req, res) => {
-  const { imovelId, data, valor, tipo, status, obs } = req.body;
-  const { rows } = await pool.query(`INSERT INTO recebimentos (imovel_id,data,valor,tipo,status,obs) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`, [imovelId, data, valor, tipo, status, obs]);
+
+app.post("/api/contratos/:id/reajustes", auth, admin, async (req, res) => {
+  const { dataReajuste, indice, periodoInicio, periodoFim, valorAnterior, percentual, valorNovo, obs } = req.body;
+  const { rows } = await pool.query(
+    "INSERT INTO reajustes (contrato_id,data_reajuste,indice,periodo_inicio,periodo_fim,valor_anterior,percentual,valor_novo,obs) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *",
+    [req.params.id, dataReajuste, indice, periodoInicio, periodoFim, valorAnterior, percentual, valorNovo, obs]
+  );
+  // Atualiza aluguel_atual do contrato
+  await pool.query("UPDATE contratos SET aluguel_atual=$1 WHERE id=$2", [valorNovo, req.params.id]);
   res.json(camelize(rows[0]));
 });
-app.put("/api/recebimentos/:id", auth, async (req, res) => {
-  const { imovelId, data, valor, tipo, status, obs } = req.body;
-  const { rows } = await pool.query(`UPDATE recebimentos SET imovel_id=$1,data=$2,valor=$3,tipo=$4,status=$5,obs=$6 WHERE id=$7 RETURNING *`, [imovelId, data, valor, tipo, status, obs, req.params.id]);
-  res.json(camelize(rows[0]));
-});
-app.delete("/api/recebimentos/:id", auth, admin, async (req, res) => {
-  await pool.query("DELETE FROM recebimentos WHERE id=$1", [req.params.id]);
+
+app.delete("/api/reajustes/:id", auth, admin, async (req, res) => {
+  await pool.query("DELETE FROM reajustes WHERE id=$1", [req.params.id]);
   res.json({ ok: true });
 });
 
-// DESPESAS
-app.get("/api/despesas", auth, async (req, res) => {
-  const { rows } = await pool.query("SELECT * FROM despesas ORDER BY data DESC");
+// ── PARCELAS ──────────────────────────────────────────────────────────────────
+app.get("/api/contratos/:id/parcelas", auth, async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM parcelas WHERE contrato_id=$1 ORDER BY vencimento ASC", [req.params.id]);
   res.json(rows.map(camelize));
 });
+
+app.put("/api/parcelas/:id", auth, async (req, res) => {
+  const { valor, valorRecebido, dataRecebimento, status, obs } = req.body;
+  const { rows } = await pool.query(
+    "UPDATE parcelas SET valor=$1,valor_recebido=$2,data_recebimento=$3,status=$4,obs=$5 WHERE id=$6 RETURNING *",
+    [valor, valorRecebido || null, dataRecebimento || null, status, obs, req.params.id]
+  );
+  res.json(camelize(rows[0]));
+});
+
+// ── DESPESAS ──────────────────────────────────────────────────────────────────
+app.get("/api/contratos/:id/despesas", auth, async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM despesas WHERE contrato_id=$1 ORDER BY data DESC", [req.params.id]);
+  res.json(rows.map(camelize));
+});
+
+app.get("/api/despesas", auth, async (req, res) => {
+  const { rows } = await pool.query("SELECT d.*,c.locatario,i.codigo FROM despesas d JOIN contratos c ON c.id=d.contrato_id JOIN imoveis i ON i.id=c.imovel_id ORDER BY d.data DESC");
+  res.json(rows.map(camelize));
+});
+
 app.post("/api/despesas", auth, async (req, res) => {
-  const { imovelId, data, valor, tipo, descricao, status } = req.body;
-  const { rows } = await pool.query(`INSERT INTO despesas (imovel_id,data,valor,tipo,descricao,status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`, [imovelId, data, valor, tipo, descricao, status]);
+  const { contratoId, data, valor, tipo, descricao, status } = req.body;
+  const { rows } = await pool.query("INSERT INTO despesas (contrato_id,data,valor,tipo,descricao,status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *", [contratoId, data, valor, tipo, descricao, status]);
   res.json(camelize(rows[0]));
 });
+
 app.put("/api/despesas/:id", auth, async (req, res) => {
-  const { imovelId, data, valor, tipo, descricao, status } = req.body;
-  const { rows } = await pool.query(`UPDATE despesas SET imovel_id=$1,data=$2,valor=$3,tipo=$4,descricao=$5,status=$6 WHERE id=$7 RETURNING *`, [imovelId, data, valor, tipo, descricao, status, req.params.id]);
+  const { contratoId, data, valor, tipo, descricao, status } = req.body;
+  const { rows } = await pool.query("UPDATE despesas SET contrato_id=$1,data=$2,valor=$3,tipo=$4,descricao=$5,status=$6 WHERE id=$7 RETURNING *", [contratoId, data, valor, tipo, descricao, status, req.params.id]);
   res.json(camelize(rows[0]));
 });
+
 app.delete("/api/despesas/:id", auth, admin, async (req, res) => {
   await pool.query("DELETE FROM despesas WHERE id=$1", [req.params.id]);
   res.json({ ok: true });
 });
 
-// REPASSES
+// ── REPASSES ──────────────────────────────────────────────────────────────────
 app.get("/api/repasses", auth, async (req, res) => {
-  const { rows } = await pool.query("SELECT * FROM repasses ORDER BY data DESC");
+  const { rows } = await pool.query("SELECT r.*,c.locador,i.codigo FROM repasses r JOIN contratos c ON c.id=r.contrato_id JOIN imoveis i ON i.id=c.imovel_id ORDER BY r.created_at DESC");
   res.json(rows.map(camelize));
 });
+
 app.post("/api/repasses", auth, admin, async (req, res) => {
-  const { imovelId, data, mes, valorBruto, taxaAdm, valorLiquido, status, formaPagamento } = req.body;
-  const { rows } = await pool.query(`INSERT INTO repasses (imovel_id,data,mes,valor_bruto,taxa_adm,valor_liquido,status,forma_pagamento) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`, [imovelId, data, mes, valorBruto, taxaAdm, valorLiquido, status, formaPagamento]);
+  const { contratoId, competencia, dataRepasse, valorRecebido, totalDespesas, taxaAdm, valorLiquido, formaPagamento, status, obs } = req.body;
+  const { rows } = await pool.query(
+    "INSERT INTO repasses (contrato_id,competencia,data_repasse,valor_recebido,total_despesas,taxa_adm,valor_liquido,forma_pagamento,status,obs) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
+    [contratoId, competencia, dataRepasse, valorRecebido, totalDespesas, taxaAdm, valorLiquido, formaPagamento, status, obs]
+  );
   res.json(camelize(rows[0]));
 });
-app.delete("/api/repasses/:id", auth, admin, async (req, res) => {
-  await pool.query("DELETE FROM repasses WHERE id=$1", [req.params.id]);
-  res.json({ ok: true });
+
+app.put("/api/repasses/:id", auth, admin, async (req, res) => {
+  const { status, dataRepasse, obs } = req.body;
+  const { rows } = await pool.query("UPDATE repasses SET status=$1,data_repasse=$2,obs=$3 WHERE id=$4 RETURNING *", [status, dataRepasse, obs, req.params.id]);
+  res.json(camelize(rows[0]));
 });
 
-// DASHBOARD STATS
+// Upload comprovante repasse
+app.post("/api/repasses/:id/comprovante", auth, admin, upload.single("comprovante"), async (req, res) => {
+  try {
+    const key = `comprovantes/${req.params.id}-${uuidv4()}`;
+    await uploadR2(req.file.buffer, key, req.file.mimetype);
+    await pool.query("UPDATE repasses SET comprovante_key=$1, comprovante_nome=$2, status='Repassado' WHERE id=$3", [key, req.file.originalname, req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get("/api/repasses/:id/comprovante/url", auth, async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT comprovante_key FROM repasses WHERE id=$1", [req.params.id]);
+    if (!rows[0]?.comprovante_key) return res.status(404).json({ error: "Sem comprovante" });
+    const url = await getR2Url(rows[0].comprovante_key);
+    res.json({ url });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── DASHBOARD ─────────────────────────────────────────────────────────────────
 app.get("/api/dashboard", auth, async (req, res) => {
-  const [imoveis, recMes, repMes, despMes, recPorMes] = await Promise.all([
-    pool.query("SELECT COUNT(*) as total, SUM(aluguel) as carteira FROM imoveis WHERE status='Ativo'"),
-    pool.query("SELECT COALESCE(SUM(valor),0) as total FROM recebimentos WHERE status='Pago' AND data >= date_trunc('month', CURRENT_DATE)"),
-    pool.query("SELECT COALESCE(SUM(valor_liquido),0) as total FROM repasses WHERE data >= date_trunc('month', CURRENT_DATE)"),
+  const [contratos, recMes, repMes, despMes, recPorMes, vencendo] = await Promise.all([
+    pool.query("SELECT COUNT(*) as total, SUM(aluguel_atual) as carteira FROM contratos WHERE status='Ativo'"),
+    pool.query("SELECT COALESCE(SUM(valor_recebido),0) as total FROM parcelas WHERE status='Pago' AND data_recebimento >= date_trunc('month', CURRENT_DATE)"),
+    pool.query("SELECT COALESCE(SUM(valor_liquido),0) as total FROM repasses WHERE data_repasse >= date_trunc('month', CURRENT_DATE)"),
     pool.query("SELECT COALESCE(SUM(valor),0) as total FROM despesas WHERE data >= date_trunc('month', CURRENT_DATE)"),
-    pool.query(`SELECT to_char(data,'YYYY-MM') as mes, COALESCE(SUM(valor),0) as recebido, COUNT(*) as qtd FROM recebimentos WHERE status='Pago' AND data >= CURRENT_DATE - INTERVAL '12 months' GROUP BY mes ORDER BY mes`),
+    pool.query("SELECT to_char(data_recebimento,'YYYY-MM') as mes, COALESCE(SUM(valor_recebido),0) as recebido FROM parcelas WHERE status='Pago' AND data_recebimento >= CURRENT_DATE - INTERVAL '12 months' GROUP BY mes ORDER BY mes"),
+    pool.query("SELECT p.*,i.codigo,c.locatario FROM parcelas p JOIN contratos c ON c.id=p.contrato_id JOIN imoveis i ON i.id=c.imovel_id WHERE p.status='Pendente' AND p.vencimento <= CURRENT_DATE + INTERVAL '7 days' ORDER BY p.vencimento LIMIT 10"),
   ]);
   res.json({
-    imoveisAtivos: +imoveis.rows[0].total,
-    carteiraMensal: +imoveis.rows[0].carteira || 0,
+    contratosAtivos: +contratos.rows[0].total,
+    carteiraMensal: +contratos.rows[0].carteira || 0,
     recebidoMes: +recMes.rows[0].total,
     repassadoMes: +repMes.rows[0].total,
     despesasMes: +despMes.rows[0].total,
     recPorMes: recPorMes.rows,
+    vencendo: vencendo.rows.map(camelize),
   });
 });
 
 const PORT = process.env.PORT || 3001;
-initDb().then(() => {
-  app.listen(PORT, () => console.log(`API rodando na porta ${PORT}`));
-}).catch(err => { console.error(err); process.exit(1); });
+initDb().then(() => app.listen(PORT, () => console.log(`API na porta ${PORT}`))).catch(err => { console.error(err); process.exit(1); });
