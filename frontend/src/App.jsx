@@ -76,6 +76,7 @@ export default function App(){
   const [despesas,setDespesas]=useState([]);
   const [repasses,setRepasses]=useState([]);
   const [usuarios,setUsuarios]=useState([]);
+  const [proprietarios,setProprietarios]=useState([]);
   const [dashboard,setDashboard]=useState(null);
   const [loading,setLoading]=useState(true);
   const [toast,setToast]=useState(null);
@@ -89,6 +90,10 @@ export default function App(){
   const [modalRepasse,setModalRepasse]=useState(null);
   const [modalDespesa,setModalDespesa]=useState(null);
   const [detalheContrato,setDetalheContrato]=useState(null);
+  const [detalheImovel,setDetalheImovel]=useState(null);
+  const [documentos,setDocumentos]=useState([]);
+  const [uploadDocTipo,setUploadDocTipo]=useState("contrato_adm");
+  const [uploadDocFile,setUploadDocFile]=useState(null);
 
   // Dados de detalhe
   const [parcelas,setParcelas]=useState([]);
@@ -99,7 +104,9 @@ export default function App(){
   const [repasseId,setRepasseId]=useState(null);
 
   // Forms
-  const emptyImovel={codigo:"",endereco:"",bairro:"",tipo:"Apartamento",area:""};
+  const [modalProprietario,setModalProprietario]=useState(null);
+  const emptyProprietario={nome:"",cpfCnpj:"",email:"",telefone:"",banco:"",agencia:"",conta:"",tipoConta:"Corrente",pix:""};
+  const [formProprietario,setFormProprietario]=useState(emptyProprietario);
   const [formImovel,setFormImovel]=useState(emptyImovel);
 
   const emptyContrato={imovelId:"",locatario:"",telefoneLocatario:"",locador:"",telefoneLocador:"",aluguelInicial:"",aluguelPagaPor:"Locatário",condominio:"",condominioPagaPor:"Locatário",iptu:"",iptuPagaPor:"Locatário",taxaAdmPct:10,vencimento:"",formaPagamento:"Pix",inicio:"",duracaoMeses:"",status:"Ativo",multaRescisaoPct:"",multaAtrasoPct:"",jurosAtrasoPct:"",honorariosPct:"",honorariosDias:"",honorariosAdvPct:"",honorariosAdvDias:""};
@@ -123,11 +130,11 @@ export default function App(){
 
   useEffect(()=>{
     if(!user) return;
-    const loads=[api.getImoveis(),api.getContratos(),api.getDespesas(),api.getRepasses(),api.getDashboard()];
+    const loads=[api.getImoveis(),api.getContratos(),api.getDespesas(),api.getRepasses(),api.getDashboard(),api.getProprietarios()];
     if(isAdmin) loads.push(api.getUsuarios());
     Promise.all(loads)
-      .then(([im,con,dep,rep,dash,usu])=>{
-        setImoveis(im);setContratos(con);setDespesas(dep);setRepasses(rep);setDashboard(dash);
+      .then(([im,con,dep,rep,dash,prop,usu])=>{
+        setImoveis(im);setContratos(con);setDespesas(dep);setRepasses(rep);setDashboard(dash);setProprietarios(prop);
         if(usu) setUsuarios(usu);
       })
       .catch(()=>showToast("Erro ao carregar dados","error"))
@@ -290,8 +297,11 @@ export default function App(){
     statCard:{background:"#131929",border:"1px solid #1e2940",borderRadius:14,padding:"18px 20px",flex:1,minWidth:130},
   };
 
+  const emptyImovel={codigo:"",endereco:"",bairro:"",tipo:"Apartamento",area:"",nomeCondominio:"",bloco:"",apartamento:"",quartos:"",mobiliado:"Sem móveis",valorIdeal:"",telPortaria:"",telContabilidade:"",telCobranca:"",telSindico:"",proprietarioId:""};
+
   const navItems=[
     {id:"dashboard",icon:"◈",label:"Dashboard"},
+    {id:"proprietarios",icon:"👤",label:"Proprietários"},
     {id:"imoveis",icon:"⌂",label:"Imóveis"},
     {id:"contratos",icon:"📋",label:"Contratos"},
     {id:"despesas",icon:"↑",label:"Despesas"},
@@ -374,27 +384,58 @@ export default function App(){
           </div>
         )}
 
-        {/* IMÓVEIS */}
+        {/* PROPRIETÁRIOS */}
+        {tab==="proprietarios"&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div><h2 style={{fontWeight:800,fontSize:24,margin:0}}>Proprietários</h2><p style={{color:"#475569",fontSize:14,marginTop:4}}>Cadastro de proprietários dos imóveis</p></div>
+              {isAdmin&&<button style={s.btn()} onClick={()=>{setFormProprietario(emptyProprietario);setModalProprietario("new");}}>+ Novo Proprietário</button>}
+            </div>
+            <div style={s.card}>
+              <table><thead><tr><th style={s.th}>Nome</th><th style={s.th}>CPF/CNPJ</th><th style={s.th}>Telefone</th><th style={s.th}>Email</th><th style={s.th}>Banco</th><th style={s.th}>PIX</th><th style={s.th}></th></tr></thead>
+                <tbody>{proprietarios.map(p=><tr key={p.id}>
+                  <td style={s.td}><span style={{fontWeight:600}}>{p.nome}</span></td>
+                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{p.cpfCnpj||"—"}</td>
+                  <td style={s.td}>{p.telefone||"—"}</td>
+                  <td style={{...s.td,color:"#64748b"}}>{p.email||"—"}</td>
+                  <td style={s.td}>{p.banco?`${p.banco} ag.${p.agencia} c.${p.conta}`:"—"}</td>
+                  <td style={s.td}>{p.pix||"—"}</td>
+                  <td style={s.td}>{isAdmin&&<div style={{display:"flex",gap:6}}>
+                    <button style={s.btnGhost} onClick={()=>{setFormProprietario({...p});setModalProprietario(p.id);}}>✎</button>
+                    <button style={{...s.btnGhost,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteProprietario(p.id);setProprietarios(x=>x.filter(i=>i.id!==p.id));}}>✕</button>
+                  </div>}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          </div>
+        )}
         {tab==="imoveis"&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div><h2 style={{fontWeight:800,fontSize:24,margin:0}}>Imóveis</h2><p style={{color:"#475569",fontSize:14,marginTop:4}}>Cadastro dos imóveis</p></div>
+              <div><h2 style={{fontWeight:800,fontSize:24,margin:0}}>Imóveis</h2><p style={{color:"#475569",fontSize:14,marginTop:4}}>Cadastro e situação atual</p></div>
               {isAdmin&&<button style={s.btn()} onClick={()=>{setFormImovel(emptyImovel);setModalImovel("new");}}>+ Novo Imóvel</button>}
             </div>
             <div style={s.card}>
-              <table><thead><tr><th style={s.th}>Código</th><th style={s.th}>Endereço</th><th style={s.th}>Bairro</th><th style={s.th}>Tipo</th><th style={s.th}>Área</th><th style={s.th}>Contratos</th><th style={s.th}>Status</th><th style={s.th}></th></tr></thead>
+              <table><thead><tr>
+                <th style={s.th}>Código</th><th style={s.th}>Endereço</th><th style={s.th}>Proprietário</th>
+                <th style={s.th}>Locatário Atual</th><th style={s.th}>Aluguel</th>
+                <th style={s.th}>Cond.</th><th style={s.th}>IPTU</th><th style={s.th}>Venc.</th>
+                <th style={s.th}>Status</th><th style={s.th}></th>
+              </tr></thead>
                 <tbody>{imoveis.map(im=><tr key={im.id}>
                   <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8",fontWeight:700}}>{im.codigo}</span></td>
-                  <td style={{...s.td,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{im.endereco}</td>
-                  <td style={s.td}>{im.bairro}</td>
-                  <td style={s.td}>{im.tipo}</td>
-                  <td style={s.td}>{im.area?`${im.area}m²`:"—"}</td>
-                  <td style={s.td}>{im.totalContratos||0}</td>
-                  <td style={s.td}><Badge label={im.statusAtual||"Sem contrato"}/></td>
-                  <td style={s.td}><div style={{display:"flex",gap:6}}>
-                    <button style={s.btnGhost} onClick={()=>{setTab("contratos");}}>Contratos</button>
-                    {isAdmin&&<><button style={s.btnGhost} onClick={()=>{setFormImovel({...im,area:String(im.area||"")});setModalImovel(im.id);}}>✎</button>
+                  <td style={{...s.td,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{im.endereco}</td>
+                  <td style={s.td}>{im.proprietarioNome||"—"}</td>
+                  <td style={s.td}>{im.locatarioAtual||<span style={{color:"#475569"}}>Vago</span>}</td>
+                  <td style={{...s.td,fontFamily:"monospace",color:"#22c55e",fontSize:12}}>{im.aluguelAtual?fmt(im.aluguelAtual):"—"}</td>
+                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{im.condominioAtual?fmt(im.condominioAtual):"—"}</td>
+                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{im.iptuAtual?fmt(im.iptuAtual):"—"}</td>
+                  <td style={s.td}>{im.vencimentoAtual?`Dia ${im.vencimentoAtual}`:"—"}</td>
+                  <td style={s.td}><Badge label={im.statusAtual||"Vago"}/></td>
+                  <td style={s.td}><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                    {isAdmin&&<><button style={s.btnGhost} onClick={()=>{setFormImovel({...im,area:String(im.area||""),quartos:String(im.quartos||""),valorIdeal:String(im.valorIdeal||""),proprietarioId:String(im.proprietarioId||"")});setModalImovel(im.id);}}>✎</button>
                     <button style={{...s.btnGhost,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteImovel(im.id);setImoveis(p=>p.filter(i=>i.id!==im.id));}}>✕</button></>}
+                    <button style={{...s.btnGhost,color:"#06b6d4",borderColor:"#06b6d430"}} onClick={async()=>{const docs=await api.getDocumentos(im.id);setDocumentos(docs);setDetalheImovel(im);setUploadDocFile(null);}}>Docs</button>
                   </div></td>
                 </tr>)}</tbody>
               </table>
@@ -578,15 +619,77 @@ export default function App(){
         )}
       </div>
 
+      {/* MODAL PROPRIETÁRIO */}
+      {modalProprietario&&(
+        <Modal title={modalProprietario==="new"?"Novo Proprietário":"Editar Proprietário"} onClose={()=>setModalProprietario(null)} wide>
+          <ST>Dados Pessoais</ST>
+          <R>
+            <F label="Nome completo *" h><input style={IS} value={formProprietario.nome} onChange={e=>setFormProprietario(p=>({...p,nome:e.target.value}))}/></F>
+            <F label="CPF / CNPJ" h><input style={IS} value={formProprietario.cpfCnpj||""} onChange={e=>setFormProprietario(p=>({...p,cpfCnpj:e.target.value}))}/></F>
+            <F label="Telefone" h><input style={IS} value={formProprietario.telefone||""} onChange={e=>setFormProprietario(p=>({...p,telefone:e.target.value}))}/></F>
+            <F label="Email" h><input style={IS} type="email" value={formProprietario.email||""} onChange={e=>setFormProprietario(p=>({...p,email:e.target.value}))}/></F>
+          </R>
+          <ST>Dados Bancários (para repasse)</ST>
+          <R>
+            <F label="Banco" h><input style={IS} value={formProprietario.banco||""} onChange={e=>setFormProprietario(p=>({...p,banco:e.target.value}))}/></F>
+            <F label="Agência" h><input style={IS} value={formProprietario.agencia||""} onChange={e=>setFormProprietario(p=>({...p,agencia:e.target.value}))}/></F>
+            <F label="Conta" h><input style={IS} value={formProprietario.conta||""} onChange={e=>setFormProprietario(p=>({...p,conta:e.target.value}))}/></F>
+            <F label="Tipo de Conta" h><select style={IS} value={formProprietario.tipoConta||"Corrente"} onChange={e=>setFormProprietario(p=>({...p,tipoConta:e.target.value}))}>{["Corrente","Poupança"].map(o=><option key={o}>{o}</option>)}</select></F>
+            <F label="PIX" h><input style={IS} value={formProprietario.pix||""} onChange={e=>setFormProprietario(p=>({...p,pix:e.target.value}))} placeholder="CPF, email, telefone ou chave"/></F>
+          </R>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:12}}>
+            <button style={s.btnGhost} onClick={()=>setModalProprietario(null)}>Cancelar</button>
+            <button style={s.btn()} onClick={async()=>{
+              if(!formProprietario.nome) return showToast("Preencha o nome","error");
+              try{
+                if(modalProprietario==="new"){const n=await api.createProprietario(formProprietario);setProprietarios(p=>[...p,n]);showToast("Proprietário cadastrado!");}
+                else{const n=await api.updateProprietario(modalProprietario,formProprietario);setProprietarios(p=>p.map(x=>x.id===modalProprietario?n:x));showToast("Atualizado!");}
+                setModalProprietario(null);
+              }catch(e){showToast(e.message,"error");}
+            }}>Salvar</button>
+          </div>
+        </Modal>
+      )}
+
       {/* MODAL IMÓVEL */}
       {modalImovel&&(
-        <Modal title={modalImovel==="new"?"Novo Imóvel":"Editar Imóvel"} onClose={()=>setModalImovel(null)}>
+        <Modal title={modalImovel==="new"?"Novo Imóvel":"Editar Imóvel"} onClose={()=>setModalImovel(null)} wide>
+          <ST>Proprietário</ST>
+          <F label="Proprietário do imóvel">
+            <select style={IS} value={formImovel.proprietarioId||""} onChange={e=>setFormImovel(p=>({...p,proprietarioId:e.target.value}))}>
+              <option value="">Selecione...</option>
+              {proprietarios.map(p=><option key={p.id} value={p.id}>{p.nome} {p.cpfCnpj?`— ${p.cpfCnpj}`:""}</option>)}
+            </select>
+          </F>
+
+          <ST>Identificação</ST>
           <R><F label="Código *" h><input style={IS} value={formImovel.codigo} onChange={e=>setFormImovel(p=>({...p,codigo:e.target.value}))} placeholder="AP-001"/></F>
           <F label="Tipo" h><select style={IS} value={formImovel.tipo} onChange={e=>setFormImovel(p=>({...p,tipo:e.target.value}))}>{["Apartamento","Casa","Comercial","Sala","Galpão","Terreno"].map(t=><option key={t}>{t}</option>)}</select></F></R>
           <F label="Endereço *"><input style={IS} value={formImovel.endereco} onChange={e=>setFormImovel(p=>({...p,endereco:e.target.value}))}/></F>
-          <R><F label="Bairro" h><input style={IS} value={formImovel.bairro} onChange={e=>setFormImovel(p=>({...p,bairro:e.target.value}))}/></F>
-          <F label="Área (m²)" h><input style={IS} type="number" value={formImovel.area} onChange={e=>setFormImovel(p=>({...p,area:e.target.value}))}/></F></R>
-          <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
+          <R>
+            <F label="Bairro" h><input style={IS} value={formImovel.bairro} onChange={e=>setFormImovel(p=>({...p,bairro:e.target.value}))}/></F>
+            <F label="Área (m²)" h><input style={IS} type="number" value={formImovel.area} onChange={e=>setFormImovel(p=>({...p,area:e.target.value}))}/></F>
+          </R>
+
+          <ST>Detalhes do Imóvel</ST>
+          <R>
+            <F label="Nome do Condomínio" h><input style={IS} value={formImovel.nomeCondominio||""} onChange={e=>setFormImovel(p=>({...p,nomeCondominio:e.target.value}))}/></F>
+            <F label="Bloco/Torre" h><input style={IS} value={formImovel.bloco||""} onChange={e=>setFormImovel(p=>({...p,bloco:e.target.value}))}/></F>
+            <F label="Apartamento/Unidade" h><input style={IS} value={formImovel.apartamento||""} onChange={e=>setFormImovel(p=>({...p,apartamento:e.target.value}))}/></F>
+            <F label="Quartos" h><input style={IS} type="number" min="0" value={formImovel.quartos||""} onChange={e=>setFormImovel(p=>({...p,quartos:e.target.value}))}/></F>
+            <F label="Mobiliado" h><select style={IS} value={formImovel.mobiliado||"Sem móveis"} onChange={e=>setFormImovel(p=>({...p,mobiliado:e.target.value}))}>{["Mobiliado","Semi-mobiliado","Sem móveis"].map(o=><option key={o}>{o}</option>)}</select></F>
+            <F label="Valor Ideal de Aluguel (R$)" h><input style={IS} type="number" value={formImovel.valorIdeal||""} onChange={e=>setFormImovel(p=>({...p,valorIdeal:e.target.value}))}/></F>
+          </R>
+
+          <ST>Contatos</ST>
+          <R>
+            <F label="Tel. Portaria" h><input style={IS} value={formImovel.telPortaria||""} onChange={e=>setFormImovel(p=>({...p,telPortaria:e.target.value}))}/></F>
+            <F label="Tel. Síndico" h><input style={IS} value={formImovel.telSindico||""} onChange={e=>setFormImovel(p=>({...p,telSindico:e.target.value}))}/></F>
+            <F label="Tel. Contabilidade" h><input style={IS} value={formImovel.telContabilidade||""} onChange={e=>setFormImovel(p=>({...p,telContabilidade:e.target.value}))}/></F>
+            <F label="Tel. Cobrança" h><input style={IS} value={formImovel.telCobranca||""} onChange={e=>setFormImovel(p=>({...p,telCobranca:e.target.value}))}/></F>
+          </R>
+
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:12}}>
             <button style={s.btnGhost} onClick={()=>setModalImovel(null)}>Cancelar</button>
             <button style={s.btn()} onClick={saveImovel}>Salvar</button>
           </div>
@@ -807,6 +910,72 @@ export default function App(){
             <button style={s.btnGhost} onClick={()=>setRepasseId(null)}>Cancelar</button>
             <button style={s.btn("#22c55e")} onClick={()=>uploadComprovante(repasseId)}>Confirmar Repasse</button>
           </div>
+        </Modal>
+      )}
+
+      {/* DETALHE IMÓVEL + DOCUMENTOS */}
+      {detalheImovel&&(
+        <Modal title={`Imóvel — ${detalheImovel.codigo}`} onClose={()=>setDetalheImovel(null)} wide>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 24px",marginBottom:16}}>
+            {[
+              ["Endereço",detalheImovel.endereco],["Bairro",detalheImovel.bairro],
+              ["Tipo",detalheImovel.tipo],["Área",detalheImovel.area?`${detalheImovel.area}m²`:"—"],
+              ["Condomínio",detalheImovel.nomeCondominio],["Bloco/Torre",detalheImovel.bloco],
+              ["Apartamento",detalheImovel.apartamento],["Quartos",detalheImovel.quartos],
+              ["Mobiliado",detalheImovel.mobiliado],["Valor Ideal",detalheImovel.valorIdeal?fmt(detalheImovel.valorIdeal):"—"],
+              ["Tel. Portaria",detalheImovel.telPortaria],["Tel. Síndico",detalheImovel.telSindico],
+              ["Tel. Contabilidade",detalheImovel.telContabilidade],["Tel. Cobrança",detalheImovel.telCobranca],
+            ].map(([k,v])=>(
+              <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #1e2940"}}>
+                <span style={{color:"#64748b",fontSize:13}}>{k}</span>
+                <span style={{fontSize:13,fontWeight:500}}>{v||"—"}</span>
+              </div>
+            ))}
+          </div>
+
+          <ST>Documentos</ST>
+          {isAdmin&&(
+            <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"flex-end"}}>
+              <div style={{flex:1,minWidth:160}}>
+                <label style={LS}>Tipo</label>
+                <select style={IS} value={uploadDocTipo} onChange={e=>setUploadDocTipo(e.target.value)}>
+                  {[["contrato_adm","Contrato de Administração"],["energia","Conta de Energia"],["agua","Conta de Água"],["gas","Conta de Gás"],["condominio","Conta de Condomínio"],["outro","Outro"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+              <div style={{flex:2,minWidth:200}}>
+                <label style={LS}>Arquivo</label>
+                <input style={IS} type="file" accept=".pdf,image/*" onChange={e=>setUploadDocFile(e.target.files[0])}/>
+              </div>
+              <button style={s.btn()} onClick={async()=>{
+                if(!uploadDocFile) return showToast("Selecione um arquivo","error");
+                try{
+                  const novo=await api.uploadDocumento(detalheImovel.id,uploadDocTipo,uploadDocFile);
+                  setDocumentos(p=>[...p,novo]);setUploadDocFile(null);showToast("Documento enviado!");
+                }catch(e){showToast(e.message,"error");}
+              }}>Enviar</button>
+            </div>
+          )}
+          {documentos.length===0?<div style={{color:"#475569",fontSize:13}}>Nenhum documento cadastrado</div>:
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {[["contrato_adm","Contrato de Administração"],["energia","Energia"],["agua","Água"],["gas","Gás"],["condominio","Condomínio"],["outro","Outros"]].map(([tipo,label])=>{
+              const docs=documentos.filter(d=>d.tipo===tipo);
+              if(!docs.length) return null;
+              return(
+                <div key={tipo}>
+                  <div style={{fontSize:11,color:"#6366f1",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{label}</div>
+                  {docs.map(doc=>(
+                    <div key={doc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#0f1623",borderRadius:8,border:"1px solid #2d3748",marginBottom:6}}>
+                      <span style={{fontSize:13,color:"#94a3b8"}}>📄 {doc.nome}</span>
+                      <div style={{display:"flex",gap:6}}>
+                        <button style={s.btnGhost} onClick={async()=>{try{const{url}=await api.getDocumentoUrl(doc.id);window.open(url,"_blank");}catch(e){showToast(e.message,"error");}}}>Ver</button>
+                        {isAdmin&&<button style={{...s.btnGhost,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{await api.deleteDocumento(doc.id);setDocumentos(p=>p.filter(x=>x.id!==doc.id));}}>✕</button>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>}
         </Modal>
       )}
 
