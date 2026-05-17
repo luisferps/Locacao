@@ -31,38 +31,55 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS usuarios (
       id SERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT UNIQUE NOT NULL,
       senha TEXT NOT NULL, role TEXT DEFAULT 'usuario', ativo BOOLEAN DEFAULT true,
-      aprovado BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT NOW()
+      aprovado BOOLEAN DEFAULT false, tipo_acesso TEXT DEFAULT 'interno',
+      ref_id INT, created_at TIMESTAMPTZ DEFAULT NOW()
     );
     ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aprovado BOOLEAN DEFAULT false;
+    ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tipo_acesso TEXT DEFAULT 'interno';
+    ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ref_id INT;
 
-    CREATE TABLE IF NOT EXISTS proprietarios (
+    CREATE TABLE IF NOT EXISTS locadores (
       id SERIAL PRIMARY KEY,
       nome TEXT NOT NULL, cpf_cnpj TEXT, email TEXT, telefone TEXT,
-      banco TEXT, agencia TEXT, conta TEXT, tipo_conta TEXT DEFAULT 'Corrente',
-      pix TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+      estado_civil TEXT, profissao TEXT, nacionalidade TEXT DEFAULT 'brasileiro(a)',
+      rg TEXT, rg_orgao TEXT,
+      endereco TEXT, bairro TEXT, cidade TEXT, estado TEXT, cep TEXT,
+      procurador_nome TEXT, procurador_cpf TEXT, procurador_rg TEXT, procurador_endereco TEXT,
+      banco TEXT, agencia TEXT, conta TEXT, tipo_conta TEXT DEFAULT 'Corrente', pix TEXT,
+      obs TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS locatarios (
+      id SERIAL PRIMARY KEY,
+      nome TEXT NOT NULL, cpf TEXT, email TEXT, telefone TEXT,
+      estado_civil TEXT, profissao TEXT, nacionalidade TEXT DEFAULT 'brasileiro(a)',
+      rg TEXT, rg_orgao TEXT, cnh TEXT,
+      endereco TEXT, bairro TEXT, cidade TEXT, estado TEXT, cep TEXT,
+      renda NUMERIC, fiador_nome TEXT, fiador_cpf TEXT, fiador_telefone TEXT,
+      obs TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS documentos_pessoa (
+      id SERIAL PRIMARY KEY,
+      tipo_pessoa TEXT NOT NULL, pessoa_id INT NOT NULL,
+      tipo TEXT, nome TEXT, key TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS imoveis (
       id SERIAL PRIMARY KEY,
-      codigo TEXT UNIQUE, endereco TEXT, bairro TEXT, tipo TEXT, area NUMERIC,
+      codigo TEXT UNIQUE, endereco TEXT, bairro TEXT, cidade TEXT, estado TEXT, cep TEXT,
+      tipo TEXT, area NUMERIC,
       nome_condominio TEXT, bloco TEXT, apartamento TEXT,
       quartos INT, mobiliado TEXT DEFAULT 'Sem móveis',
       valor_ideal NUMERIC,
       tel_portaria TEXT, tel_contabilidade TEXT, tel_cobranca TEXT, tel_sindico TEXT,
-      proprietario_id INT REFERENCES proprietarios(id) ON DELETE SET NULL,
+      locador_id INT REFERENCES locadores(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS nome_condominio TEXT;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS bloco TEXT;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS apartamento TEXT;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS quartos INT;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS mobiliado TEXT DEFAULT 'Sem móveis';
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS valor_ideal NUMERIC;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS tel_portaria TEXT;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS tel_contabilidade TEXT;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS tel_cobranca TEXT;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS tel_sindico TEXT;
-    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS proprietario_id INT REFERENCES proprietarios(id) ON DELETE SET NULL;
+    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS cidade TEXT;
+    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS estado TEXT;
+    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS cep TEXT;
+    ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS locador_id INT REFERENCES locadores(id) ON DELETE SET NULL;
 
     CREATE TABLE IF NOT EXISTS documentos_imovel (
       id SERIAL PRIMARY KEY,
@@ -70,27 +87,55 @@ async function initDb() {
       tipo TEXT, nome TEXT, key TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS vistorias (
+      id SERIAL PRIMARY KEY,
+      imovel_id INT REFERENCES imoveis(id) ON DELETE CASCADE,
+      tipo TEXT DEFAULT 'Entrada', data DATE, responsavel TEXT,
+      observacoes TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS documentos_vistoria (
+      id SERIAL PRIMARY KEY,
+      vistoria_id INT REFERENCES vistorias(id) ON DELETE CASCADE,
+      nome TEXT, key TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS historico_imovel (
+      id SERIAL PRIMARY KEY,
+      imovel_id INT REFERENCES imoveis(id) ON DELETE CASCADE,
+      tipo TEXT, descricao TEXT, data DATE, usuario_nome TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS contratos (
       id SERIAL PRIMARY KEY,
       imovel_id INT REFERENCES imoveis(id) ON DELETE CASCADE,
+      locatario_id INT REFERENCES locatarios(id) ON DELETE SET NULL,
+      locador_id INT REFERENCES locadores(id) ON DELETE SET NULL,
       locatario TEXT, telefone_locatario TEXT,
       locador TEXT, telefone_locador TEXT,
       aluguel_inicial NUMERIC, aluguel_atual NUMERIC,
       aluguel_paga_por TEXT DEFAULT 'Locatário',
       condominio NUMERIC DEFAULT 0, condominio_paga_por TEXT DEFAULT 'Locatário',
       iptu NUMERIC DEFAULT 0, iptu_paga_por TEXT DEFAULT 'Locatário',
+      caucao NUMERIC DEFAULT 0,
       taxa_adm_pct NUMERIC DEFAULT 10,
       vencimento INT, forma_pagamento TEXT DEFAULT 'Pix',
       inicio DATE, duracao_meses INT, fim DATE,
       status TEXT DEFAULT 'Ativo',
       multa_rescisao_pct NUMERIC DEFAULT 0,
-      multa_atraso_pct NUMERIC DEFAULT 0,
-      juros_atraso_pct NUMERIC DEFAULT 0,
-      honorarios_pct NUMERIC DEFAULT 0, honorarios_dias INT DEFAULT 0,
-      honorarios_adv_pct NUMERIC DEFAULT 0, honorarios_adv_dias INT DEFAULT 0,
+      multa_atraso_pct NUMERIC DEFAULT 10,
+      juros_atraso_pct NUMERIC DEFAULT 1,
+      honorarios_pct NUMERIC DEFAULT 10, honorarios_dias INT DEFAULT 10,
+      honorarios_adv_pct NUMERIC DEFAULT 20, honorarios_adv_dias INT DEFAULT 20,
+      indice_reajuste TEXT DEFAULT 'IGPM',
       contrato_pdf_key TEXT, contrato_pdf_nome TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+    ALTER TABLE contratos ADD COLUMN IF NOT EXISTS locatario_id INT REFERENCES locatarios(id) ON DELETE SET NULL;
+    ALTER TABLE contratos ADD COLUMN IF NOT EXISTS locador_id INT REFERENCES locadores(id) ON DELETE SET NULL;
+    ALTER TABLE contratos ADD COLUMN IF NOT EXISTS caucao NUMERIC DEFAULT 0;
+    ALTER TABLE contratos ADD COLUMN IF NOT EXISTS indice_reajuste TEXT DEFAULT 'IGPM';
 
     CREATE TABLE IF NOT EXISTS reajustes (
       id SERIAL PRIMARY KEY,
@@ -106,6 +151,10 @@ async function initDb() {
       competencia TEXT, vencimento DATE, valor NUMERIC,
       valor_recebido NUMERIC, data_recebimento DATE,
       status TEXT DEFAULT 'Pendente', obs TEXT,
+      dias_atraso INT GENERATED ALWAYS AS (
+        CASE WHEN status='Pendente' AND vencimento < CURRENT_DATE
+          THEN CURRENT_DATE - vencimento ELSE 0 END
+      ) STORED,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -125,6 +174,12 @@ async function initDb() {
       forma_pagamento TEXT, status TEXT DEFAULT 'Pendente',
       comprovante_key TEXT, comprovante_nome TEXT,
       obs TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS documentos_repasse (
+      id SERIAL PRIMARY KEY,
+      repasse_id INT REFERENCES repasses(id) ON DELETE CASCADE,
+      nome TEXT, key TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
   await pool.query("UPDATE usuarios SET aprovado=true WHERE role='admin' AND aprovado=false");
@@ -159,15 +214,18 @@ const uploadR2 = async (buffer, key, contentType) => {
 };
 const getR2Url = async (key) => getSignedUrl(r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }), { expiresIn: 3600 });
 
-// AUTH
+// ── AUTH ──────────────────────────────────────────────────────────────────────
 app.post("/api/auth/register", async (req, res) => {
   try {
-    const { nome, email, senha } = req.body;
+    const { nome, email, senha, tipoAcesso, refId } = req.body;
     if (!nome || !email || !senha) return res.status(400).json({ error: "Preencha todos os campos" });
     const existing = await pool.query("SELECT id FROM usuarios WHERE email=$1", [email]);
     if (existing.rows.length) return res.status(400).json({ error: "Email já cadastrado" });
     const hash = await bcrypt.hash(senha, 10);
-    await pool.query("INSERT INTO usuarios (nome,email,senha,role,aprovado) VALUES ($1,$2,$3,'usuario',false)", [nome, email, hash]);
+    await pool.query(
+      "INSERT INTO usuarios (nome,email,senha,role,aprovado,tipo_acesso,ref_id) VALUES ($1,$2,$3,'usuario',false,$4,$5)",
+      [nome, email, hash, tipoAcesso||'interno', refId||null]
+    );
     res.json({ ok: true, message: "Cadastro realizado! Aguarde a aprovação." });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -181,19 +239,19 @@ app.post("/api/auth/login", async (req, res) => {
     if (!valid) return res.status(401).json({ error: "Email ou senha incorretos" });
     if (!rows[0].aprovado) return res.status(403).json({ error: "Conta não aprovada pelo administrador." });
     const user = rows[0];
-    const token = jwt.sign({ id: user.id, nome: user.nome, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
-    res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, role: user.role } });
+    const token = jwt.sign({ id: user.id, nome: user.nome, email: user.email, role: user.role, tipoAcesso: user.tipo_acesso, refId: user.ref_id }, JWT_SECRET, { expiresIn: "7d" });
+    res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, role: user.role, tipoAcesso: user.tipo_acesso, refId: user.ref_id } });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// USUÁRIOS
+// ── USUÁRIOS ──────────────────────────────────────────────────────────────────
 app.get("/api/usuarios", auth, admin, async (req, res) => {
-  const { rows } = await pool.query("SELECT id,nome,email,role,ativo,aprovado,created_at FROM usuarios ORDER BY aprovado ASC, created_at DESC");
+  const { rows } = await pool.query("SELECT id,nome,email,role,ativo,aprovado,tipo_acesso,ref_id,created_at FROM usuarios ORDER BY aprovado ASC, created_at DESC");
   res.json(rows.map(camelize));
 });
 app.put("/api/usuarios/:id", auth, admin, async (req, res) => {
   const { nome, role, ativo, aprovado } = req.body;
-  const { rows } = await pool.query("UPDATE usuarios SET nome=$1,role=$2,ativo=$3,aprovado=$4 WHERE id=$5 RETURNING id,nome,email,role,ativo,aprovado", [nome, role, ativo, aprovado, req.params.id]);
+  const { rows } = await pool.query("UPDATE usuarios SET nome=$1,role=$2,ativo=$3,aprovado=$4 WHERE id=$5 RETURNING id,nome,email,role,ativo,aprovado,tipo_acesso,ref_id", [nome, role, ativo, aprovado, req.params.id]);
   res.json(camelize(rows[0]));
 });
 app.delete("/api/usuarios/:id", auth, admin, async (req, res) => {
@@ -202,76 +260,128 @@ app.delete("/api/usuarios/:id", auth, admin, async (req, res) => {
   res.json({ ok: true });
 });
 
-// PROPRIETÁRIOS
-app.get("/api/proprietarios", auth, async (req, res) => {
-  const { rows } = await pool.query("SELECT * FROM proprietarios ORDER BY nome");
+// ── LOCADORES ─────────────────────────────────────────────────────────────────
+app.get("/api/locadores", auth, async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM locadores ORDER BY nome");
   res.json(rows.map(camelize));
 });
-app.post("/api/proprietarios", auth, admin, async (req, res) => {
-  const { nome, cpfCnpj, email, telefone, banco, agencia, conta, tipoConta, pix } = req.body;
+app.post("/api/locadores", auth, admin, async (req, res) => {
+  const f = req.body;
   const { rows } = await pool.query(
-    "INSERT INTO proprietarios (nome,cpf_cnpj,email,telefone,banco,agencia,conta,tipo_conta,pix) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *",
-    [nome, cpfCnpj, email, telefone, banco, agencia, conta, tipoConta||'Corrente', pix]
+    `INSERT INTO locadores (nome,cpf_cnpj,email,telefone,estado_civil,profissao,nacionalidade,rg,rg_orgao,endereco,bairro,cidade,estado,cep,procurador_nome,procurador_cpf,procurador_rg,procurador_endereco,banco,agencia,conta,tipo_conta,pix,obs)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING *`,
+    [f.nome,f.cpfCnpj,f.email,f.telefone,f.estadoCivil,f.profissao,f.nacionalidade||'brasileiro(a)',f.rg,f.rgOrgao,f.endereco,f.bairro,f.cidade,f.estado,f.cep,f.procuradorNome,f.procuradorCpf,f.procuradorRg,f.procuradorEndereco,f.banco,f.agencia,f.conta,f.tipoConta||'Corrente',f.pix,f.obs]
   );
   res.json(camelize(rows[0]));
 });
-app.put("/api/proprietarios/:id", auth, admin, async (req, res) => {
-  const { nome, cpfCnpj, email, telefone, banco, agencia, conta, tipoConta, pix } = req.body;
+app.put("/api/locadores/:id", auth, admin, async (req, res) => {
+  const f = req.body;
   const { rows } = await pool.query(
-    "UPDATE proprietarios SET nome=$1,cpf_cnpj=$2,email=$3,telefone=$4,banco=$5,agencia=$6,conta=$7,tipo_conta=$8,pix=$9 WHERE id=$10 RETURNING *",
-    [nome, cpfCnpj, email, telefone, banco, agencia, conta, tipoConta||'Corrente', pix, req.params.id]
+    `UPDATE locadores SET nome=$1,cpf_cnpj=$2,email=$3,telefone=$4,estado_civil=$5,profissao=$6,nacionalidade=$7,rg=$8,rg_orgao=$9,endereco=$10,bairro=$11,cidade=$12,estado=$13,cep=$14,procurador_nome=$15,procurador_cpf=$16,procurador_rg=$17,procurador_endereco=$18,banco=$19,agencia=$20,conta=$21,tipo_conta=$22,pix=$23,obs=$24 WHERE id=$25 RETURNING *`,
+    [f.nome,f.cpfCnpj,f.email,f.telefone,f.estadoCivil,f.profissao,f.nacionalidade||'brasileiro(a)',f.rg,f.rgOrgao,f.endereco,f.bairro,f.cidade,f.estado,f.cep,f.procuradorNome,f.procuradorCpf,f.procuradorRg,f.procuradorEndereco,f.banco,f.agencia,f.conta,f.tipoConta||'Corrente',f.pix,f.obs,req.params.id]
   );
   res.json(camelize(rows[0]));
 });
-app.delete("/api/proprietarios/:id", auth, admin, async (req, res) => {
-  await pool.query("DELETE FROM proprietarios WHERE id=$1", [req.params.id]);
+app.delete("/api/locadores/:id", auth, admin, async (req, res) => {
+  await pool.query("DELETE FROM locadores WHERE id=$1", [req.params.id]);
   res.json({ ok: true });
 });
 
-// IMÓVEIS
+// ── LOCATÁRIOS ────────────────────────────────────────────────────────────────
+app.get("/api/locatarios", auth, async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM locatarios ORDER BY nome");
+  res.json(rows.map(camelize));
+});
+app.post("/api/locatarios", auth, admin, async (req, res) => {
+  const f = req.body;
+  const { rows } = await pool.query(
+    `INSERT INTO locatarios (nome,cpf,email,telefone,estado_civil,profissao,nacionalidade,rg,rg_orgao,cnh,endereco,bairro,cidade,estado,cep,renda,fiador_nome,fiador_cpf,fiador_telefone,obs)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+    [f.nome,f.cpf,f.email,f.telefone,f.estadoCivil,f.profissao,f.nacionalidade||'brasileiro(a)',f.rg,f.rgOrgao,f.cnh,f.endereco,f.bairro,f.cidade,f.estado,f.cep,f.renda||null,f.fiadorNome,f.fiadorCpf,f.fiadorTelefone,f.obs]
+  );
+  res.json(camelize(rows[0]));
+});
+app.put("/api/locatarios/:id", auth, admin, async (req, res) => {
+  const f = req.body;
+  const { rows } = await pool.query(
+    `UPDATE locatarios SET nome=$1,cpf=$2,email=$3,telefone=$4,estado_civil=$5,profissao=$6,nacionalidade=$7,rg=$8,rg_orgao=$9,cnh=$10,endereco=$11,bairro=$12,cidade=$13,estado=$14,cep=$15,renda=$16,fiador_nome=$17,fiador_cpf=$18,fiador_telefone=$19,obs=$20 WHERE id=$21 RETURNING *`,
+    [f.nome,f.cpf,f.email,f.telefone,f.estadoCivil,f.profissao,f.nacionalidade||'brasileiro(a)',f.rg,f.rgOrgao,f.cnh,f.endereco,f.bairro,f.cidade,f.estado,f.cep,f.renda||null,f.fiadorNome,f.fiadorCpf,f.fiadorTelefone,f.obs,req.params.id]
+  );
+  res.json(camelize(rows[0]));
+});
+app.delete("/api/locatarios/:id", auth, admin, async (req, res) => {
+  await pool.query("DELETE FROM locatarios WHERE id=$1", [req.params.id]);
+  res.json({ ok: true });
+});
+
+// ── DOCUMENTOS PESSOA ─────────────────────────────────────────────────────────
+app.get("/api/documentos-pessoa/:tipo/:id", auth, async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM documentos_pessoa WHERE tipo_pessoa=$1 AND pessoa_id=$2 ORDER BY tipo,created_at DESC", [req.params.tipo, req.params.id]);
+  res.json(rows.map(camelize));
+});
+app.post("/api/documentos-pessoa/:tipo/:id", auth, admin, upload.single("arquivo"), async (req, res) => {
+  try {
+    const { tipo } = req.body;
+    const key = `pessoas/${req.params.tipo}/${req.params.id}/${tipo}-${uuidv4()}`;
+    await uploadR2(req.file.buffer, key, req.file.mimetype);
+    const { rows } = await pool.query(
+      "INSERT INTO documentos_pessoa (tipo_pessoa,pessoa_id,tipo,nome,key) VALUES ($1,$2,$3,$4,$5) RETURNING *",
+      [req.params.tipo, req.params.id, tipo, req.file.originalname, key]
+    );
+    res.json(camelize(rows[0]));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.get("/api/documentos/:id/url", auth, async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT key FROM documentos_pessoa WHERE id=$1 UNION SELECT key FROM documentos_imovel WHERE id=$1 UNION SELECT key FROM documentos_repasse WHERE id=$1", [req.params.id]);
+    if (!rows[0]?.key) return res.status(404).json({ error: "Não encontrado" });
+    res.json({ url: await getR2Url(rows[0].key) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.delete("/api/documentos-pessoa/:id", auth, admin, async (req, res) => {
+  await pool.query("DELETE FROM documentos_pessoa WHERE id=$1", [req.params.id]);
+  res.json({ ok: true });
+});
+
+// ── IMÓVEIS ───────────────────────────────────────────────────────────────────
 app.get("/api/imoveis", auth, async (req, res) => {
   const { rows } = await pool.query(`
-    SELECT i.*, p.nome as proprietario_nome, p.telefone as proprietario_tel,
+    SELECT i.*, l.nome as locador_nome, l.telefone as locador_tel,
       COUNT(c.id) as total_contratos,
       (SELECT c2.status FROM contratos c2 WHERE c2.imovel_id=i.id ORDER BY c2.created_at DESC LIMIT 1) as status_atual,
-      (SELECT c2.locatario FROM contratos c2 WHERE c2.imovel_id=i.id AND c2.status='Ativo' ORDER BY c2.created_at DESC LIMIT 1) as locatario_atual,
+      (SELECT lt.nome FROM contratos c2 JOIN locatarios lt ON lt.id=c2.locatario_id WHERE c2.imovel_id=i.id AND c2.status='Ativo' ORDER BY c2.created_at DESC LIMIT 1) as locatario_atual,
       (SELECT c2.aluguel_atual FROM contratos c2 WHERE c2.imovel_id=i.id AND c2.status='Ativo' ORDER BY c2.created_at DESC LIMIT 1) as aluguel_atual,
       (SELECT c2.condominio FROM contratos c2 WHERE c2.imovel_id=i.id AND c2.status='Ativo' ORDER BY c2.created_at DESC LIMIT 1) as condominio_atual,
       (SELECT c2.iptu FROM contratos c2 WHERE c2.imovel_id=i.id AND c2.status='Ativo' ORDER BY c2.created_at DESC LIMIT 1) as iptu_atual,
       (SELECT c2.vencimento FROM contratos c2 WHERE c2.imovel_id=i.id AND c2.status='Ativo' ORDER BY c2.created_at DESC LIMIT 1) as vencimento_atual
-    FROM imoveis i
-    LEFT JOIN proprietarios p ON p.id=i.proprietario_id
-    LEFT JOIN contratos c ON c.imovel_id=i.id
-    GROUP BY i.id, p.nome, p.telefone ORDER BY i.id
+    FROM imoveis i LEFT JOIN locadores l ON l.id=i.locador_id LEFT JOIN contratos c ON c.imovel_id=i.id
+    GROUP BY i.id, l.nome, l.telefone ORDER BY i.id
   `);
   res.json(rows.map(camelize));
 });
-
 app.post("/api/imoveis", auth, admin, async (req, res) => {
   const f = req.body;
   const { rows } = await pool.query(
-    `INSERT INTO imoveis (codigo,endereco,bairro,tipo,area,nome_condominio,bloco,apartamento,quartos,mobiliado,valor_ideal,tel_portaria,tel_contabilidade,tel_cobranca,tel_sindico,proprietario_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
-    [f.codigo,f.endereco,f.bairro,f.tipo,f.area||null,f.nomeCondominio,f.bloco,f.apartamento,f.quartos||null,f.mobiliado||'Sem móveis',f.valorIdeal||null,f.telPortaria,f.telContabilidade,f.telCobranca,f.telSindico,f.proprietarioId||null]
+    `INSERT INTO imoveis (codigo,endereco,bairro,cidade,estado,cep,tipo,area,nome_condominio,bloco,apartamento,quartos,mobiliado,valor_ideal,tel_portaria,tel_contabilidade,tel_cobranca,tel_sindico,locador_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
+    [f.codigo,f.endereco,f.bairro,f.cidade,f.estado,f.cep,f.tipo,f.area||null,f.nomeCondominio,f.bloco,f.apartamento,f.quartos||null,f.mobiliado||'Sem móveis',f.valorIdeal||null,f.telPortaria,f.telContabilidade,f.telCobranca,f.telSindico,f.locadorId||null]
   );
   res.json(camelize(rows[0]));
 });
-
 app.put("/api/imoveis/:id", auth, admin, async (req, res) => {
   const f = req.body;
   const { rows } = await pool.query(
-    `UPDATE imoveis SET codigo=$1,endereco=$2,bairro=$3,tipo=$4,area=$5,nome_condominio=$6,bloco=$7,apartamento=$8,quartos=$9,mobiliado=$10,valor_ideal=$11,tel_portaria=$12,tel_contabilidade=$13,tel_cobranca=$14,tel_sindico=$15,proprietario_id=$16 WHERE id=$17 RETURNING *`,
-    [f.codigo,f.endereco,f.bairro,f.tipo,f.area||null,f.nomeCondominio,f.bloco,f.apartamento,f.quartos||null,f.mobiliado||'Sem móveis',f.valorIdeal||null,f.telPortaria,f.telContabilidade,f.telCobranca,f.telSindico,f.proprietarioId||null,req.params.id]
+    `UPDATE imoveis SET codigo=$1,endereco=$2,bairro=$3,cidade=$4,estado=$5,cep=$6,tipo=$7,area=$8,nome_condominio=$9,bloco=$10,apartamento=$11,quartos=$12,mobiliado=$13,valor_ideal=$14,tel_portaria=$15,tel_contabilidade=$16,tel_cobranca=$17,tel_sindico=$18,locador_id=$19 WHERE id=$20 RETURNING *`,
+    [f.codigo,f.endereco,f.bairro,f.cidade,f.estado,f.cep,f.tipo,f.area||null,f.nomeCondominio,f.bloco,f.apartamento,f.quartos||null,f.mobiliado||'Sem móveis',f.valorIdeal||null,f.telPortaria,f.telContabilidade,f.telCobranca,f.telSindico,f.locadorId||null,req.params.id]
   );
   res.json(camelize(rows[0]));
 });
-
 app.delete("/api/imoveis/:id", auth, admin, async (req, res) => {
   await pool.query("DELETE FROM imoveis WHERE id=$1", [req.params.id]);
   res.json({ ok: true });
 });
 
-// DOCUMENTOS
+// DOCUMENTOS IMÓVEL
 app.get("/api/imoveis/:id/documentos", auth, async (req, res) => {
   const { rows } = await pool.query("SELECT * FROM documentos_imovel WHERE imovel_id=$1 ORDER BY tipo,created_at DESC", [req.params.id]);
   res.json(rows.map(camelize));
@@ -279,31 +389,77 @@ app.get("/api/imoveis/:id/documentos", auth, async (req, res) => {
 app.post("/api/imoveis/:id/documentos", auth, admin, upload.single("arquivo"), async (req, res) => {
   try {
     const { tipo } = req.body;
-    const key = `documentos/${req.params.id}/${tipo}-${uuidv4()}`;
+    const key = `imoveis/${req.params.id}/${tipo}-${uuidv4()}`;
     await uploadR2(req.file.buffer, key, req.file.mimetype);
     const { rows } = await pool.query("INSERT INTO documentos_imovel (imovel_id,tipo,nome,key) VALUES ($1,$2,$3,$4) RETURNING *", [req.params.id, tipo, req.file.originalname, key]);
     res.json(camelize(rows[0]));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-app.get("/api/documentos/:id/url", auth, async (req, res) => {
+app.get("/api/imoveis-doc/:id/url", auth, async (req, res) => {
   try {
     const { rows } = await pool.query("SELECT key FROM documentos_imovel WHERE id=$1", [req.params.id]);
     if (!rows[0]?.key) return res.status(404).json({ error: "Não encontrado" });
     res.json({ url: await getR2Url(rows[0].key) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-app.delete("/api/documentos/:id", auth, admin, async (req, res) => {
+app.delete("/api/imoveis-doc/:id", auth, admin, async (req, res) => {
   await pool.query("DELETE FROM documentos_imovel WHERE id=$1", [req.params.id]);
   res.json({ ok: true });
 });
 
-// CONTRATOS
+// VISTORIAS
+app.get("/api/imoveis/:id/vistorias", auth, async (req, res) => {
+  const { rows } = await pool.query("SELECT v.*,array_agg(json_build_object('id',d.id,'nome',d.nome)) FILTER (WHERE d.id IS NOT NULL) as fotos FROM vistorias v LEFT JOIN documentos_vistoria d ON d.vistoria_id=v.id WHERE v.imovel_id=$1 GROUP BY v.id ORDER BY v.data DESC", [req.params.id]);
+  res.json(rows.map(camelize));
+});
+app.post("/api/imoveis/:id/vistorias", auth, admin, async (req, res) => {
+  const { tipo, data, responsavel, observacoes } = req.body;
+  const { rows } = await pool.query("INSERT INTO vistorias (imovel_id,tipo,data,responsavel,observacoes) VALUES ($1,$2,$3,$4,$5) RETURNING *", [req.params.id, tipo, data, responsavel, observacoes]);
+  await pool.query("INSERT INTO historico_imovel (imovel_id,tipo,descricao,data,usuario_nome) VALUES ($1,'Vistoria',$2,$3,$4)", [req.params.id, `Vistoria de ${tipo} realizada por ${responsavel}`, data, req.user.nome]);
+  res.json(camelize(rows[0]));
+});
+app.post("/api/vistorias/:id/fotos", auth, admin, upload.single("foto"), async (req, res) => {
+  try {
+    const key = `vistorias/${req.params.id}/${uuidv4()}`;
+    await uploadR2(req.file.buffer, key, req.file.mimetype);
+    const { rows } = await pool.query("INSERT INTO documentos_vistoria (vistoria_id,nome,key) VALUES ($1,$2,$3) RETURNING *", [req.params.id, req.file.originalname, key]);
+    res.json(camelize(rows[0]));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.get("/api/vistoria-foto/:id/url", auth, async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT key FROM documentos_vistoria WHERE id=$1", [req.params.id]);
+    if (!rows[0]?.key) return res.status(404).json({ error: "Não encontrado" });
+    res.json({ url: await getR2Url(rows[0].key) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// HISTÓRICO
+app.get("/api/imoveis/:id/historico", auth, async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM historico_imovel WHERE imovel_id=$1 ORDER BY created_at DESC", [req.params.id]);
+  res.json(rows.map(camelize));
+});
+app.post("/api/imoveis/:id/historico", auth, async (req, res) => {
+  const { tipo, descricao, data } = req.body;
+  const { rows } = await pool.query("INSERT INTO historico_imovel (imovel_id,tipo,descricao,data,usuario_nome) VALUES ($1,$2,$3,$4,$5) RETURNING *", [req.params.id, tipo, descricao, data, req.user.nome]);
+  res.json(camelize(rows[0]));
+});
+
+// ── CONTRATOS ─────────────────────────────────────────────────────────────────
 app.get("/api/contratos", auth, async (req, res) => {
-  const imovelId = req.query.imovelId;
-  const q = imovelId
-    ? "SELECT c.*,i.codigo,i.endereco,i.bairro,i.tipo FROM contratos c JOIN imoveis i ON i.id=c.imovel_id WHERE c.imovel_id=$1 ORDER BY c.created_at DESC"
-    : "SELECT c.*,i.codigo,i.endereco,i.bairro,i.tipo FROM contratos c JOIN imoveis i ON i.id=c.imovel_id ORDER BY c.created_at DESC";
-  const { rows } = await pool.query(q, imovelId ? [imovelId] : []);
+  const where = req.user.tipoAcesso === 'locador' ? `AND c.locador_id=${req.user.refId}` :
+                req.user.tipoAcesso === 'locatario' ? `AND c.locatario_id=${req.user.refId}` : '';
+  const imovelId = req.query.imovelId ? `AND c.imovel_id=${+req.query.imovelId}` : '';
+  const { rows } = await pool.query(`
+    SELECT c.*,i.codigo,i.endereco,i.bairro,i.tipo,
+      lt.nome as locatario_nome_full, ld.nome as locador_nome_full
+    FROM contratos c
+    JOIN imoveis i ON i.id=c.imovel_id
+    LEFT JOIN locatarios lt ON lt.id=c.locatario_id
+    LEFT JOIN locadores ld ON ld.id=c.locador_id
+    WHERE 1=1 ${where} ${imovelId}
+    ORDER BY c.created_at DESC
+  `);
   res.json(rows.map(camelize));
 });
 
@@ -312,9 +468,9 @@ app.post("/api/contratos", auth, admin, async (req, res) => {
     const f = req.body;
     const fim = f.inicio && f.duracaoMeses ? (() => { const d = new Date(f.inicio); d.setMonth(d.getMonth() + +f.duracaoMeses); return d.toISOString().split("T")[0]; })() : null;
     const { rows } = await pool.query(
-      `INSERT INTO contratos (imovel_id,locatario,telefone_locatario,locador,telefone_locador,aluguel_inicial,aluguel_atual,aluguel_paga_por,condominio,condominio_paga_por,iptu,iptu_paga_por,taxa_adm_pct,vencimento,forma_pagamento,inicio,duracao_meses,fim,status,multa_rescisao_pct,multa_atraso_pct,juros_atraso_pct,honorarios_pct,honorarios_dias,honorarios_adv_pct,honorarios_adv_dias)
-       VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,
-      [f.imovelId,f.locatario,f.telefoneLocatario,f.locador,f.telefoneLocador,+f.aluguelInicial,f.aluguelPagaPor||'Locatário',+f.condominio||0,f.condominioPagaPor||'Locatário',+f.iptu||0,f.iptuPagaPor||'Locatário',+f.taxaAdmPct||10,+f.vencimento,f.formaPagamento||'Pix',f.inicio||null,+f.duracaoMeses||null,fim,f.status||'Ativo',+f.multaRescisaoPct||0,+f.multaAtrasoPct||0,+f.jurosAtrasoPct||0,+f.honorariosPct||0,+f.honorariosDias||0,+f.honorariosAdvPct||0,+f.honorariosAdvDias||0]
+      `INSERT INTO contratos (imovel_id,locatario_id,locador_id,locatario,telefone_locatario,locador,telefone_locador,aluguel_inicial,aluguel_atual,aluguel_paga_por,condominio,condominio_paga_por,iptu,iptu_paga_por,caucao,taxa_adm_pct,vencimento,forma_pagamento,inicio,duracao_meses,fim,status,multa_rescisao_pct,multa_atraso_pct,juros_atraso_pct,honorarios_pct,honorarios_dias,honorarios_adv_pct,honorarios_adv_dias,indice_reajuste)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING *`,
+      [f.imovelId,f.locatarioId||null,f.locadorId||null,f.locatario,f.telefoneLocatario,f.locador,f.telefoneLocador,+f.aluguelInicial,f.aluguelPagaPor||'Locatário',+f.condominio||0,f.condominioPagaPor||'Locatário',+f.iptu||0,f.iptuPagaPor||'Locatário',+f.caucao||0,+f.taxaAdmPct||10,+f.vencimento,f.formaPagamento||'Pix',f.inicio||null,+f.duracaoMeses||null,fim,f.status||'Ativo',+f.multaRescisaoPct||0,+f.multaAtrasoPct||10,+f.jurosAtrasoPct||1,+f.honorariosPct||10,+f.honorariosDias||10,+f.honorariosAdvPct||20,+f.honorariosAdvDias||20,f.indiceReajuste||'IGPM']
     );
     const contrato = rows[0];
     if (f.inicio && f.duracaoMeses && f.vencimento) {
@@ -326,6 +482,7 @@ app.post("/api/contratos", auth, admin, async (req, res) => {
         await pool.query("INSERT INTO parcelas (contrato_id,competencia,vencimento,valor,status) VALUES ($1,$2,$3,$4,'Pendente')", [contrato.id, comp, dataVenc.toISOString().split('T')[0], +f.aluguelInicial]);
       }
     }
+    await pool.query("INSERT INTO historico_imovel (imovel_id,tipo,descricao,data,usuario_nome) VALUES ($1,'Contrato',$2,CURRENT_DATE,$3)", [f.imovelId, `Contrato iniciado com ${f.locatario}`, req.user.nome]);
     res.json(camelize(contrato));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -334,8 +491,8 @@ app.put("/api/contratos/:id", auth, admin, async (req, res) => {
   const f = req.body;
   const fim = f.inicio && f.duracaoMeses ? (() => { const d = new Date(f.inicio); d.setMonth(d.getMonth() + +f.duracaoMeses); return d.toISOString().split("T")[0]; })() : null;
   const { rows } = await pool.query(
-    `UPDATE contratos SET locatario=$1,telefone_locatario=$2,locador=$3,telefone_locador=$4,aluguel_atual=$5,aluguel_paga_por=$6,condominio=$7,condominio_paga_por=$8,iptu=$9,iptu_paga_por=$10,taxa_adm_pct=$11,vencimento=$12,forma_pagamento=$13,inicio=$14,duracao_meses=$15,fim=$16,status=$17,multa_rescisao_pct=$18,multa_atraso_pct=$19,juros_atraso_pct=$20,honorarios_pct=$21,honorarios_dias=$22,honorarios_adv_pct=$23,honorarios_adv_dias=$24 WHERE id=$25 RETURNING *`,
-    [f.locatario,f.telefoneLocatario,f.locador,f.telefoneLocador,+f.aluguelAtual,f.aluguelPagaPor||'Locatário',+f.condominio||0,f.condominioPagaPor||'Locatário',+f.iptu||0,f.iptuPagaPor||'Locatário',+f.taxaAdmPct||10,+f.vencimento,f.formaPagamento||'Pix',f.inicio||null,+f.duracaoMeses||null,fim,f.status||'Ativo',+f.multaRescisaoPct||0,+f.multaAtrasoPct||0,+f.jurosAtrasoPct||0,+f.honorariosPct||0,+f.honorariosDias||0,+f.honorariosAdvPct||0,+f.honorariosAdvDias||0,req.params.id]
+    `UPDATE contratos SET locatario_id=$1,locador_id=$2,locatario=$3,telefone_locatario=$4,locador=$5,telefone_locador=$6,aluguel_atual=$7,aluguel_paga_por=$8,condominio=$9,condominio_paga_por=$10,iptu=$11,iptu_paga_por=$12,caucao=$13,taxa_adm_pct=$14,vencimento=$15,forma_pagamento=$16,inicio=$17,duracao_meses=$18,fim=$19,status=$20,multa_rescisao_pct=$21,multa_atraso_pct=$22,juros_atraso_pct=$23,honorarios_pct=$24,honorarios_dias=$25,honorarios_adv_pct=$26,honorarios_adv_dias=$27,indice_reajuste=$28 WHERE id=$29 RETURNING *`,
+    [f.locatarioId||null,f.locadorId||null,f.locatario,f.telefoneLocatario,f.locador,f.telefoneLocador,+f.aluguelAtual,f.aluguelPagaPor||'Locatário',+f.condominio||0,f.condominioPagaPor||'Locatário',+f.iptu||0,f.iptuPagaPor||'Locatário',+f.caucao||0,+f.taxaAdmPct||10,+f.vencimento,f.formaPagamento||'Pix',f.inicio||null,+f.duracaoMeses||null,fim,f.status||'Ativo',+f.multaRescisaoPct||0,+f.multaAtrasoPct||10,+f.jurosAtrasoPct||1,+f.honorariosPct||10,+f.honorariosDias||10,+f.honorariosAdvPct||20,+f.honorariosAdvDias||20,f.indiceReajuste||'IGPM',req.params.id]
   );
   res.json(camelize(rows[0]));
 });
@@ -353,7 +510,6 @@ app.post("/api/contratos/:id/pdf", auth, admin, upload.single("contrato"), async
     res.json({ ok: true, key, nome: req.file.originalname });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.get("/api/contratos/:id/pdf/url", auth, async (req, res) => {
   try {
     const { rows } = await pool.query("SELECT contrato_pdf_key FROM contratos WHERE id=$1", [req.params.id]);
@@ -395,6 +551,26 @@ app.put("/api/parcelas/:id", auth, async (req, res) => {
   res.json(camelize(rows[0]));
 });
 
+// INADIMPLÊNCIA
+app.get("/api/inadimplencia", auth, async (req, res) => {
+  const where = req.user.tipoAcesso === 'locador' ? `AND c.locador_id=${req.user.refId}` : '';
+  const { rows } = await pool.query(`
+    SELECT p.*,c.locatario,c.locador,c.multa_atraso_pct,c.juros_atraso_pct,c.honorarios_pct,c.honorarios_dias,c.honorarios_adv_pct,c.honorarios_adv_dias,i.codigo,
+      (CURRENT_DATE - p.vencimento) as dias_atraso_calc,
+      p.valor * (c.multa_atraso_pct/100) as valor_multa,
+      p.valor * (c.juros_atraso_pct/100) * (CURRENT_DATE - p.vencimento)/30.0 as valor_juros
+    FROM parcelas p
+    JOIN contratos c ON c.id=p.contrato_id
+    JOIN imoveis i ON i.id=c.imovel_id
+    WHERE p.status='Pendente' AND p.vencimento < CURRENT_DATE ${where}
+    ORDER BY p.vencimento ASC
+  `);
+  res.json(rows.map(r => ({
+    ...camelize(r),
+    totalDevido: Number(r.valor) + Number(r.valor_multa||0) + Number(r.valor_juros||0)
+  })));
+});
+
 // DESPESAS
 app.get("/api/despesas", auth, async (req, res) => {
   const { rows } = await pool.query("SELECT d.*,c.locatario,i.codigo FROM despesas d JOIN contratos c ON c.id=d.contrato_id JOIN imoveis i ON i.id=c.imovel_id ORDER BY d.data DESC");
@@ -417,7 +593,8 @@ app.delete("/api/despesas/:id", auth, admin, async (req, res) => {
 
 // REPASSES
 app.get("/api/repasses", auth, async (req, res) => {
-  const { rows } = await pool.query("SELECT r.*,c.locador,i.codigo FROM repasses r JOIN contratos c ON c.id=r.contrato_id JOIN imoveis i ON i.id=c.imovel_id ORDER BY r.created_at DESC");
+  const where = req.user.tipoAcesso === 'locador' ? `AND c.locador_id=${req.user.refId}` : '';
+  const { rows } = await pool.query(`SELECT r.*,c.locador,i.codigo FROM repasses r JOIN contratos c ON c.id=r.contrato_id JOIN imoveis i ON i.id=c.imovel_id WHERE 1=1 ${where} ORDER BY r.created_at DESC`);
   res.json(rows.map(camelize));
 });
 app.post("/api/repasses", auth, admin, async (req, res) => {
@@ -438,26 +615,62 @@ app.post("/api/repasses/:id/comprovante", auth, admin, upload.single("comprovant
     const key = `comprovantes/${req.params.id}-${uuidv4()}`;
     await uploadR2(req.file.buffer, key, req.file.mimetype);
     await pool.query("UPDATE repasses SET comprovante_key=$1,comprovante_nome=$2,status='Repassado' WHERE id=$3", [key, req.file.originalname, req.params.id]);
+    const { rows } = await pool.query("INSERT INTO documentos_repasse (repasse_id,nome,key) VALUES ($1,$2,$3) RETURNING *", [req.params.id, req.file.originalname, key]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.get("/api/repasses/:id/comprovante/url", auth, async (req, res) => {
   try {
-    const { rows } = await pool.query("SELECT comprovante_key FROM repasses WHERE id=$1", [req.params.id]);
-    if (!rows[0]?.comprovante_key) return res.status(404).json({ error: "Sem comprovante" });
-    res.json({ url: await getR2Url(rows[0].comprovante_key) });
+    const { rows } = await pool.query("SELECT comprovante_key as key FROM repasses WHERE id=$1", [req.params.id]);
+    if (!rows[0]?.key) return res.status(404).json({ error: "Sem comprovante" });
+    res.json({ url: await getR2Url(rows[0].key) });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.get("/api/repasses/:id/documentos", auth, async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM documentos_repasse WHERE repasse_id=$1", [req.params.id]);
+  res.json(rows.map(camelize));
+});
+app.post("/api/repasses/:id/documentos", auth, admin, upload.single("arquivo"), async (req, res) => {
+  try {
+    const key = `repasses/${req.params.id}/${uuidv4()}`;
+    await uploadR2(req.file.buffer, key, req.file.mimetype);
+    const { rows } = await pool.query("INSERT INTO documentos_repasse (repasse_id,nome,key) VALUES ($1,$2,$3) RETURNING *", [req.params.id, req.file.originalname, key]);
+    res.json(camelize(rows[0]));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.get("/api/repasse-doc/:id/url", auth, async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT key FROM documentos_repasse WHERE id=$1", [req.params.id]);
+    if (!rows[0]?.key) return res.status(404).json({ error: "Não encontrado" });
+    res.json({ url: await getR2Url(rows[0].key) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DRE + PREVISÃO
+app.get("/api/dre", auth, async (req, res) => {
+  const { inicio, fim } = req.query;
+  const where = inicio && fim ? `AND data BETWEEN '${inicio}' AND '${fim}'` : '';
+  const [receitas, despesas, repasses, previsao] = await Promise.all([
+    pool.query(`SELECT to_char(data_recebimento,'YYYY-MM') as mes, COALESCE(SUM(valor_recebido),0) as total FROM parcelas WHERE status='Pago' ${inicio&&fim?`AND data_recebimento BETWEEN '${inicio}' AND '${fim}'`:''} GROUP BY mes ORDER BY mes`),
+    pool.query(`SELECT to_char(data,'YYYY-MM') as mes, tipo, COALESCE(SUM(valor),0) as total FROM despesas WHERE 1=1 ${inicio&&fim?`AND data BETWEEN '${inicio}' AND '${fim}'`:''} GROUP BY mes,tipo ORDER BY mes`),
+    pool.query(`SELECT to_char(data_repasse,'YYYY-MM') as mes, COALESCE(SUM(taxa_adm),0) as honorarios, COALESCE(SUM(valor_liquido),0) as repassado FROM repasses WHERE 1=1 ${inicio&&fim?`AND data_repasse BETWEEN '${inicio}' AND '${fim}'`:''} GROUP BY mes ORDER BY mes`),
+    pool.query(`SELECT p.competencia, p.vencimento, p.valor, p.status, i.codigo, c.locatario FROM parcelas p JOIN contratos c ON c.id=p.contrato_id JOIN imoveis i ON i.id=c.imovel_id WHERE p.status='Pendente' AND c.status='Ativo' AND p.vencimento >= CURRENT_DATE ORDER BY p.vencimento ASC LIMIT 60`),
+  ]);
+  res.json({ receitas: receitas.rows, despesas: despesas.rows, repasses: repasses.rows, previsao: previsao.rows.map(camelize) });
 });
 
 // DASHBOARD
 app.get("/api/dashboard", auth, async (req, res) => {
-  const [contratos, recMes, repMes, despMes, recPorMes, vencendo] = await Promise.all([
-    pool.query("SELECT COUNT(*) as total, COALESCE(SUM(aluguel_atual),0) as carteira FROM contratos WHERE status='Ativo'"),
+  const where = req.user.tipoAcesso === 'locador' ? `AND c.locador_id=${req.user.refId}` :
+                req.user.tipoAcesso === 'locatario' ? `AND c.locatario_id=${req.user.refId}` : '';
+  const [contratos, recMes, repMes, despMes, recPorMes, vencendo, inadimplentes] = await Promise.all([
+    pool.query(`SELECT COUNT(*) as total, COALESCE(SUM(aluguel_atual),0) as carteira FROM contratos c WHERE status='Ativo' ${where}`),
     pool.query("SELECT COALESCE(SUM(valor_recebido),0) as total FROM parcelas WHERE status='Pago' AND data_recebimento >= date_trunc('month', CURRENT_DATE)"),
     pool.query("SELECT COALESCE(SUM(valor_liquido),0) as total FROM repasses WHERE data_repasse >= date_trunc('month', CURRENT_DATE)"),
     pool.query("SELECT COALESCE(SUM(valor),0) as total FROM despesas WHERE data >= date_trunc('month', CURRENT_DATE)"),
     pool.query("SELECT to_char(data_recebimento,'YYYY-MM') as mes, COALESCE(SUM(valor_recebido),0) as recebido FROM parcelas WHERE status='Pago' AND data_recebimento >= CURRENT_DATE - INTERVAL '12 months' GROUP BY mes ORDER BY mes"),
-    pool.query("SELECT p.*,i.codigo,c.locatario FROM parcelas p JOIN contratos c ON c.id=p.contrato_id JOIN imoveis i ON i.id=c.imovel_id WHERE p.status='Pendente' AND p.vencimento <= CURRENT_DATE + INTERVAL '7 days' ORDER BY p.vencimento LIMIT 10"),
+    pool.query(`SELECT p.*,i.codigo,c.locatario FROM parcelas p JOIN contratos c ON c.id=p.contrato_id JOIN imoveis i ON i.id=c.imovel_id WHERE p.status='Pendente' AND p.vencimento <= CURRENT_DATE + INTERVAL '7 days' AND p.vencimento >= CURRENT_DATE ${where} ORDER BY p.vencimento LIMIT 10`),
+    pool.query(`SELECT COUNT(*) as total, COALESCE(SUM(valor),0) as valor_total FROM parcelas p JOIN contratos c ON c.id=p.contrato_id WHERE p.status='Pendente' AND p.vencimento < CURRENT_DATE ${where}`),
   ]);
   res.json({
     contratosAtivos: +contratos.rows[0].total,
@@ -465,6 +678,8 @@ app.get("/api/dashboard", auth, async (req, res) => {
     recebidoMes: +recMes.rows[0].total,
     repassadoMes: +repMes.rows[0].total,
     despesasMes: +despMes.rows[0].total,
+    inadimplentesQtd: +inadimplentes.rows[0].total,
+    inadimplentesValor: +inadimplentes.rows[0].valor_total,
     recPorMes: recPorMes.rows,
     vencendo: vencendo.rows.map(camelize),
   });
