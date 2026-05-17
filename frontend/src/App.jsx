@@ -1,25 +1,45 @@
-// v2
+// v3
 import { useState, useEffect, useMemo, useRef } from "react";
 import { api } from "./api.js";
 import Auth from "./Auth.jsx";
 
-const fmt = (v) => Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const fmtDate = (d) => d ? new Date(d+"T12:00:00").toLocaleDateString("pt-BR") : "-";
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function fmt(v){ return Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+function fmtDate(d){ return d ? new Date(d+"T12:00:00").toLocaleDateString("pt-BR") : "-"; }
+function numExtenso(n){
+  const u=["","um","dois","três","quatro","cinco","seis","sete","oito","nove","dez","onze","doze","treze","quatorze","quinze","dezesseis","dezessete","dezoito","dezenove"];
+  const d=["","","vinte","trinta","quarenta","cinquenta","sessenta","setenta","oitenta","noventa"];
+  const c=["","cem","duzentos","trezentos","quatrocentos","quinhentos","seiscentos","setecentos","oitocentos","novecentos"];
+  if(!n||n===0) return "zero";
+  n=Math.round(n);
+  if(n<20) return u[n];
+  if(n<100) return d[Math.floor(n/10)]+(n%10?` e ${u[n%10]}`:"");
+  if(n<1000) return (n===100?"cem":c[Math.floor(n/100)])+(n%100?` e ${numExtenso(n%100)}`:"");
+  if(n<1000000){ const m=Math.floor(n/1000); return `${numExtenso(m)} mil${n%1000?` e ${numExtenso(n%1000)}`:""}` }
+  return String(n);
+}
+
 const pagaOpts = ["Locatário","Locador","ADM"];
 const fpOpts = ["Pix","Boleto bancário","Transferência"];
 const indiceOpts = ["IGPM","IPCA","INPC","IPC-A","Manual"];
+const tiposDocPessoa = [["rg","RG"],["cpf","CPF"],["comprovante_renda","Comp. Renda"],["comprovante_endereco","Comp. Endereço"],["outros","Outros"]];
+const tiposDocImovel = [["contrato_adm","Contrato ADM"],["energia","Energia"],["agua","Água"],["gas","Gás"],["condominio","Condomínio"],["iptu","IPTU"],["outros","Outros"]];
 
 const statusColors = {
   Ativo:"#22c55e",Inativo:"#94a3b8",Encerrado:"#64748b",
   Pago:"#22c55e",Pendente:"#f59e0b",Atrasado:"#ef4444",
-  Repassado:"#6366f1",Aguardando:"#f59e0b"
+  Repassado:"#6366f1",Aguardando:"#f59e0b",Entrada:"#22c55e",Saída:"#ef4444"
 };
-function Badge({label}){return<span style={{background:(statusColors[label]||"#64748b")+"22",color:statusColors[label]||"#64748b",border:`1px solid ${(statusColors[label]||"#64748b")}44`,padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{label}</span>;}
+
+// ─── UI Components ─────────────────────────────────────────────────────────────
+function Badge({label}){
+  return <span style={{background:(statusColors[label]||"#64748b")+"22",color:statusColors[label]||"#64748b",border:`1px solid ${(statusColors[label]||"#64748b")}44`,padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{label}</span>;
+}
 
 function Modal({title,onClose,children,wide}){
   return(
     <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflowY:"auto"}}>
-      <div style={{background:"#1a1f2e",borderRadius:16,padding:28,width:"100%",maxWidth:wide?800:580,border:"1px solid #2d3748",boxShadow:"0 25px 60px #000a",margin:"auto"}}>
+      <div style={{background:"#1a1f2e",borderRadius:16,padding:28,width:"100%",maxWidth:wide?860:580,border:"1px solid #2d3748",boxShadow:"0 25px 60px #000a",margin:"auto"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
           <h3 style={{color:"#e2e8f0",fontWeight:700,fontSize:18,margin:0}}>{title}</h3>
           <button onClick={onClose} style={{background:"none",border:"none",color:"#94a3b8",fontSize:22,cursor:"pointer"}}>✕</button>
@@ -32,9 +52,10 @@ function Modal({title,onClose,children,wide}){
 
 const IS = {width:"100%",background:"#0f1623",border:"1px solid #2d3748",borderRadius:8,color:"#e2e8f0",padding:"8px 12px",fontSize:14,boxSizing:"border-box",outline:"none",fontFamily:"inherit"};
 const LS = {color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4};
-function F({label,children,h}){return<div style={{marginBottom:14,flex:h?"1 1 45%":"1 1 100%"}}><label style={LS}>{label}</label>{children}</div>;}
-function R({children}){return<div style={{display:"flex",gap:16,flexWrap:"wrap"}}>{children}</div>;}
-function ST({children}){return<div style={{fontSize:11,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:2,margin:"18px 0 10px",paddingBottom:6,borderBottom:"1px solid #1e2940"}}>{children}</div>;}
+
+function F({label,children,h}){return <div style={{marginBottom:14,flex:h?"1 1 45%":"1 1 100%"}}><label style={LS}>{label}</label>{children}</div>;}
+function R({children}){return <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>{children}</div>;}
+function ST({children}){return <div style={{fontSize:11,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:2,margin:"18px 0 10px",paddingBottom:6,borderBottom:"1px solid #1e2940"}}>{children}</div>;}
 
 function PF({label,vk,pk,form,set}){
   return(
@@ -50,68 +71,126 @@ function PF({label,vk,pk,form,set}){
   );
 }
 
-function Toast({msg,type}){return<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:type==="error"?"#ef4444":"#22c55e",color:"#fff",padding:"12px 20px",borderRadius:10,fontWeight:600,fontSize:14,boxShadow:"0 8px 24px #0008",animation:"fadeIn .2s"}}>{msg}</div>;}
+function Toast({msg,type}){return <div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:type==="error"?"#ef4444":"#22c55e",color:"#fff",padding:"12px 20px",borderRadius:10,fontWeight:600,fontSize:14,boxShadow:"0 8px 24px #0008"}}>{msg}</div>;}
 
 function BarChart({data}){
-  if(!data?.length) return <div style={{color:"#475569",fontSize:13,textAlign:"center",padding:32}}>Sem dados ainda</div>;
+  if(!data?.length) return <div style={{color:"#475569",fontSize:13,textAlign:"center",padding:24}}>Sem dados ainda</div>;
   const max=Math.max(...data.map(d=>+d.recebido),1);
   return(
-    <div style={{display:"flex",alignItems:"flex-end",gap:6,height:120}}>
+    <div style={{display:"flex",alignItems:"flex-end",gap:6,height:100}}>
       {data.map(d=>(
         <div key={d.mes} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-          <div style={{fontSize:9,color:"#64748b"}}>{fmt(d.recebido).replace("R$","").trim()}</div>
-          <div style={{width:"100%",background:"#6366f1",borderRadius:"3px 3px 0 0",height:`${(+d.recebido/max)*80}px`,minHeight:3}}/>
-          <div style={{fontSize:9,color:"#475569"}}>{d.mes?.slice(5)}/{d.mes?.slice(2,4)}</div>
+          <div style={{fontSize:8,color:"#64748b"}}>{Number(d.recebido).toLocaleString("pt-BR",{notation:"compact"})}</div>
+          <div style={{width:"100%",background:"#6366f1",borderRadius:"3px 3px 0 0",height:`${(+d.recebido/max)*70}px`,minHeight:3}}/>
+          <div style={{fontSize:8,color:"#475569"}}>{d.mes?.slice(5)}/{d.mes?.slice(2,4)}</div>
         </div>
       ))}
     </div>
   );
 }
 
+function DocUploader({docs,onUpload,onView,onDelete,tipos,isAdmin}){
+  const [tipo,setTipo]=useState(tipos[0][0]);
+  const [file,setFile]=useState(null);
+  return(
+    <div>
+      {isAdmin&&(
+        <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"flex-end"}}>
+          <div style={{flex:1,minWidth:150}}>
+            <label style={LS}>Tipo</label>
+            <select style={IS} value={tipo} onChange={e=>setTipo(e.target.value)}>
+              {tipos.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div style={{flex:2,minWidth:200}}>
+            <label style={LS}>Arquivo</label>
+            <input style={IS} type="file" accept=".pdf,image/*" onChange={e=>setFile(e.target.files[0])}/>
+          </div>
+          <button style={{background:"#6366f1",color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13}} onClick={()=>{if(file)onUpload(tipo,file,()=>setFile(null));}}>Enviar</button>
+        </div>
+      )}
+      {docs.length===0?<div style={{color:"#475569",fontSize:13}}>Nenhum documento</div>:
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {tipos.map(([t,l])=>{
+          const ds=docs.filter(d=>d.tipo===t);
+          if(!ds.length) return null;
+          return(
+            <div key={t}>
+              <div style={{fontSize:11,color:"#6366f1",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>{l}</div>
+              {ds.map(doc=>(
+                <div key={doc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 12px",background:"#0f1623",borderRadius:8,border:"1px solid #2d3748",marginBottom:4}}>
+                  <span style={{fontSize:12,color:"#94a3b8"}}>📄 {doc.nome}</span>
+                  <div style={{display:"flex",gap:6}}>
+                    <button style={{background:"transparent",color:"#94a3b8",border:"1px solid #2d3748",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}} onClick={()=>onView(doc.id)}>Ver</button>
+                    {isAdmin&&<button style={{background:"transparent",color:"#ef4444",border:"1px solid #ef444430",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}} onClick={()=>onDelete(doc.id)}>✕</button>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>}
+    </div>
+  );
+}
+
+// ─── Main App ──────────────────────────────────────────────────────────────────
 export default function App(){
   const [tab,setTab]=useState("dashboard");
   const [user,setUser]=useState(()=>{try{return JSON.parse(localStorage.getItem("user"));}catch{return null;}});
   const isAdmin=user?.role==="admin";
+  const isInterno=!user?.tipoAcesso||user?.tipoAcesso==="interno";
+
+  // Data state
   const [imoveis,setImoveis]=useState([]);
   const [contratos,setContratos]=useState([]);
+  const [locadores,setLocadores]=useState([]);
+  const [locatarios,setLocatarios]=useState([]);
   const [despesas,setDespesas]=useState([]);
   const [repasses,setRepasses]=useState([]);
   const [usuarios,setUsuarios]=useState([]);
-  const [proprietarios,setProprietarios]=useState([]);
   const [dashboard,setDashboard]=useState(null);
   const [loading,setLoading]=useState(true);
   const [toast,setToast]=useState(null);
-  const showToast=(msg,type="ok")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
 
-  // Modais
+  function showToast(msg,type="ok"){setToast({msg,type});setTimeout(()=>setToast(null),3500);}
+
+  // Modal state
+  const [modalLocador,setModalLocador]=useState(null);
+  const [modalLocatario,setModalLocatario]=useState(null);
   const [modalImovel,setModalImovel]=useState(null);
   const [modalContrato,setModalContrato]=useState(null);
-  const [modalParcelas,setModalParcelas]=useState(null); // contratoId
-  const [modalReajuste,setModalReajuste]=useState(null); // contratoId
+  const [modalParcelas,setModalParcelas]=useState(null);
+  const [modalReajuste,setModalReajuste]=useState(null);
   const [modalRepasse,setModalRepasse]=useState(null);
   const [modalDespesa,setModalDespesa]=useState(null);
-  const [detalheContrato,setDetalheContrato]=useState(null);
-  const [detalheImovel,setDetalheImovel]=useState(null);
-  const [documentos,setDocumentos]=useState([]);
-  const [uploadDocTipo,setUploadDocTipo]=useState("contrato_adm");
-  const [uploadDocFile,setUploadDocFile]=useState(null);
+  const [modalDetalhe,setModalDetalhe]=useState(null); // {tipo, data}
+  const [repasseId,setRepasseId]=useState(null);
+  const [comprovanteFile,setComprovanteFile]=useState(null);
 
-  // Dados de detalhe
+  // Parcelas/reajustes detail
   const [parcelas,setParcelas]=useState([]);
   const [reajustes,setReajustes]=useState([]);
   const [parcelaEdit,setParcelaEdit]=useState(null);
   const [contratoFile,setContratoFile]=useState(null);
-  const [comprovanteFile,setComprovanteFile]=useState(null);
-  const [repasseId,setRepasseId]=useState(null);
 
-  // Forms
-  const [modalProprietario,setModalProprietario]=useState(null);
-  const emptyProprietario={nome:"",cpfCnpj:"",email:"",telefone:"",banco:"",agencia:"",conta:"",tipoConta:"Corrente",pix:""};
-  const [formProprietario,setFormProprietario]=useState(emptyProprietario);
-  const emptyImovel={codigo:"",endereco:"",bairro:"",tipo:"Apartamento",area:"",nomeCondominio:"",bloco:"",apartamento:"",quartos:"",mobiliado:"Sem móveis",valorIdeal:"",telPortaria:"",telContabilidade:"",telCobranca:"",telSindico:"",proprietarioId:""};
+  // DRE state
+  const [dreInicio,setDreInicio]=useState("");
+  const [dreFim,setDreFim]=useState("");
+  const [dreData,setDreData]=useState(null);
+  const [inadimplencia,setInadimplencia]=useState([]);
+
+  // Forms - all declared before useState
+  const emptyLocador={nome:"",cpfCnpj:"",email:"",telefone:"",estadoCivil:"",profissao:"",nacionalidade:"brasileiro(a)",rg:"",rgOrgao:"",endereco:"",bairro:"",cidade:"",estado:"GO",cep:"",procuradorNome:"",procuradorCpf:"",procuradorRg:"",procuradorEndereco:"",banco:"",agencia:"",conta:"",tipoConta:"Corrente",pix:"",obs:""};
+  const [formLocador,setFormLocador]=useState(emptyLocador);
+
+  const emptyLocatario={nome:"",cpf:"",email:"",telefone:"",estadoCivil:"",profissao:"",nacionalidade:"brasileiro(a)",rg:"",rgOrgao:"",cnh:"",endereco:"",bairro:"",cidade:"",estado:"GO",cep:"",renda:"",fiadorNome:"",fiadorCpf:"",fiadorTelefone:"",obs:""};
+  const [formLocatario,setFormLocatario]=useState(emptyLocatario);
+
+  const emptyImovel={codigo:"",endereco:"",bairro:"",cidade:"Goiânia",estado:"GO",cep:"",tipo:"Apartamento",area:"",nomeCondominio:"",bloco:"",apartamento:"",quartos:"",mobiliado:"Sem móveis",valorIdeal:"",telPortaria:"",telContabilidade:"",telCobranca:"",telSindico:"",locadorId:""};
   const [formImovel,setFormImovel]=useState(emptyImovel);
 
-  const emptyContrato={imovelId:"",locatario:"",telefoneLocatario:"",locador:"",telefoneLocador:"",aluguelInicial:"",aluguelPagaPor:"Locatário",condominio:"",condominioPagaPor:"Locatário",iptu:"",iptuPagaPor:"Locatário",taxaAdmPct:10,vencimento:"",formaPagamento:"Pix",inicio:"",duracaoMeses:"",status:"Ativo",multaRescisaoPct:"",multaAtrasoPct:"",jurosAtrasoPct:"",honorariosPct:"",honorariosDias:"",honorariosAdvPct:"",honorariosAdvDias:""};
+  const emptyContrato={imovelId:"",locatarioId:"",locadorId:"",locatario:"",telefoneLocatario:"",locador:"",telefoneLocador:"",aluguelInicial:"",aluguelPagaPor:"Locatário",condominio:"",condominioPagaPor:"Locatário",iptu:"",iptuPagaPor:"Locatário",caucao:"",taxaAdmPct:10,vencimento:"",formaPagamento:"Pix",inicio:"",duracaoMeses:"",status:"Ativo",multaRescisaoPct:0,multaAtrasoPct:10,jurosAtrasoPct:1,honorariosPct:10,honorariosDias:10,honorariosAdvPct:20,honorariosAdvDias:20,indiceReajuste:"IGPM"};
   const [formContrato,setFormContrato]=useState(emptyContrato);
 
   const emptyReajuste={dataReajuste:"",indice:"IGPM",periodoInicio:"",periodoFim:"",valorAnterior:"",percentual:"",valorNovo:"",obs:""};
@@ -123,21 +202,25 @@ export default function App(){
   const emptyDespesa={contratoId:"",data:"",valor:"",tipo:"Manutenção",descricao:"",status:"Pago"};
   const [formDespesa,setFormDespesa]=useState(emptyDespesa);
 
-  // Relatório
+  // Relatorio
   const [relLocador,setRelLocador]=useState("");
   const [relMesInicio,setRelMesInicio]=useState("");
   const [relMesFim,setRelMesFim]=useState("");
   const [relGerado,setRelGerado]=useState(false);
   const printRef=useRef(null);
 
+  // Load
   useEffect(()=>{
     if(!user) return;
-    const loads=[api.getImoveis(),api.getContratos(),api.getDespesas(),api.getRepasses(),api.getDashboard(),api.getProprietarios()];
+    const loads=[api.getImoveis(),api.getContratos(),api.getDespesas(),api.getRepasses(),api.getDashboard(),api.getLocadores(),api.getLocatarios()];
     if(isAdmin) loads.push(api.getUsuarios());
+    if(isInterno) loads.push(api.getInadimplencia());
     Promise.all(loads)
-      .then(([im,con,dep,rep,dash,prop,usu])=>{
-        setImoveis(im);setContratos(con);setDespesas(dep);setRepasses(rep);setDashboard(dash);setProprietarios(prop);
-        if(usu) setUsuarios(usu);
+      .then(([im,con,dep,rep,dash,loc,locat,...rest])=>{
+        setImoveis(im);setContratos(con);setDespesas(dep);setRepasses(rep);setDashboard(dash);setLocadores(loc);setLocatarios(locat);
+        let idx=0;
+        if(isAdmin){setUsuarios(rest[idx++]);}
+        if(isInterno){setInadimplencia(rest[idx++]||[]);}
       })
       .catch(()=>showToast("Erro ao carregar dados","error"))
       .finally(()=>setLoading(false));
@@ -145,170 +228,159 @@ export default function App(){
 
   if(!user) return <Auth onLogin={()=>window.location.reload()}/>;
 
-  const imovelNome=(id)=>imoveis.find(i=>i.id===+id)?.codigo||"—";
-  const contratoNome=(id)=>{const c=contratos.find(c=>c.id===+id);return c?`${c.codigo} — ${c.locatario}`:"—";};
+  // Computed
+  const locadorNome=(id)=>locadores.find(l=>l.id===+id)?.nome||"—";
+  const locatarioNome=(id)=>locatarios.find(l=>l.id===+id)?.nome||"—";
+  const contratoLabel=(id)=>{const c=contratos.find(x=>x.id===+id);return c?`${c.codigo} — ${c.locatario}`:"—";};
 
-  // Cálculos automáticos
-  const calcMulRescisao=(c)=>{
-    if(!c?.aluguelAtual||!c?.duracaoMeses||!c?.inicio) return 0;
-    const inicio=new Date(c.inicio);
-    const fim=new Date(c.fim||inicio);
-    const hoje=new Date();
-    const totalMeses=+c.duracaoMeses;
-    const mesesDecorridos=Math.max(0,(hoje.getFullYear()-inicio.getFullYear())*12+(hoje.getMonth()-inicio.getMonth()));
-    const mesesRestantes=Math.max(0,totalMeses-mesesDecorridos);
-    return 3*Number(c.aluguelAtual)*(mesesRestantes/totalMeses);
-  };
-
-  const calcRepasseAuto=(contratoId)=>{
-    const c=contratos.find(x=>x.id===+contratoId);
-    if(!c) return {};
-    const mesAtual=new Date().toISOString().slice(0,7);
-    const recMes=parcelas.filter(p=>p.contratoId===+contratoId&&p.status==="Pago"&&p.dataRecebimento?.slice(0,7)===mesAtual).reduce((s,p)=>s+Number(p.valorRecebido||0),0);
-    const despMes=despesas.filter(d=>d.contratoId===+contratoId&&d.data?.slice(0,7)===mesAtual).reduce((s,d)=>s+Number(d.valor),0);
-    const taxa=(recMes*Number(c.taxaAdmPct))/100;
-    const liq=recMes-despMes-taxa;
-    return{valorRecebido:recMes.toFixed(2),totalDespesas:despMes.toFixed(2),taxaAdm:taxa.toFixed(2),valorLiquido:liq.toFixed(2)};
-  };
-
-  // IMÓVEL handlers
-  const saveImovel=async()=>{
-    if(!formImovel.codigo||!formImovel.endereco) return showToast("Preencha código e endereço","error");
-    try{
-      if(modalImovel==="new"){const n=await api.createImovel(formImovel);setImoveis(p=>[...p,n]);showToast("Imóvel cadastrado!");}
-      else{const n=await api.updateImovel(modalImovel,formImovel);setImoveis(p=>p.map(i=>i.id===modalImovel?n:i));showToast("Imóvel atualizado!");}
-      setModalImovel(null);
-    }catch(e){showToast(e.message,"error");}
-  };
-
-  // CONTRATO handlers
-  const saveContrato=async()=>{
-    if(!formContrato.imovelId||!formContrato.locatario||!formContrato.aluguelInicial) return showToast("Preencha os campos obrigatórios","error");
-    const payload={...formContrato,aluguelInicial:+formContrato.aluguelInicial,aluguelAtual:+formContrato.aluguelInicial,condominio:+formContrato.condominio||0,iptu:+formContrato.iptu||0,taxaAdmPct:+formContrato.taxaAdmPct,vencimento:+formContrato.vencimento,duracaoMeses:+formContrato.duracaoMeses||null};
-    try{
-      if(modalContrato==="new"){
-        const n=await api.createContrato(payload);
-        if(contratoFile) await api.uploadContratoPdf(n.id,contratoFile);
-        setContratos(p=>[n,...p]);
-        showToast("Contrato criado com parcelas geradas!");
-      }else{
-        const n=await api.updateContrato(modalContrato,payload);
-        if(contratoFile) await api.uploadContratoPdf(modalContrato,contratoFile);
-        setContratos(p=>p.map(c=>c.id===modalContrato?n:c));
-        showToast("Contrato atualizado!");
-      }
-      setModalContrato(null);setContratoFile(null);
-    }catch(e){showToast(e.message,"error");}
-  };
-
-  // PARCELA handlers
-  const openParcelas=async(contratoId)=>{
-    try{
-      const [p,r]=await Promise.all([api.getParcelas(contratoId),api.getReajustes(contratoId)]);
-      setParcelas(p);setReajustes(r);setModalParcelas(contratoId);
-    }catch(e){showToast(e.message,"error");}
-  };
-
-  const saveParcela=async()=>{
-    try{
-      const n=await api.updateParcela(parcelaEdit.id,parcelaEdit);
-      setParcelas(p=>p.map(x=>x.id===parcelaEdit.id?n:x));
-      setParcelaEdit(null);showToast("Parcela atualizada!");
-    }catch(e){showToast(e.message,"error");}
-  };
-
-  // REAJUSTE handlers
-  const saveReajuste=async()=>{
-    if(!formReajuste.dataReajuste||!formReajuste.valorNovo) return showToast("Preencha data e valor novo","error");
-    try{
-      const n=await api.createReajuste(modalReajuste,{...formReajuste,valorAnterior:+formReajuste.valorAnterior,percentual:+formReajuste.percentual,valorNovo:+formReajuste.valorNovo});
-      setReajustes(p=>[n,...p]);
-      setContratos(p=>p.map(c=>c.id===+modalReajuste?{...c,aluguelAtual:+formReajuste.valorNovo}:c));
-      showToast("Reajuste registrado!");setFormReajuste(emptyReajuste);
-    }catch(e){showToast(e.message,"error");}
-  };
-
-  // DESPESA handlers
-  const saveDespesa=async()=>{
-    if(!formDespesa.contratoId||!formDespesa.data||!formDespesa.valor) return;
-    try{
-      if(modalDespesa==="new"){const n=await api.createDespesa({...formDespesa,valor:+formDespesa.valor,contratoId:+formDespesa.contratoId});setDespesas(p=>[n,...p]);showToast("Despesa registrada!");}
-      else{const n=await api.updateDespesa(modalDespesa,{...formDespesa,valor:+formDespesa.valor,contratoId:+formDespesa.contratoId});setDespesas(p=>p.map(d=>d.id===modalDespesa?n:d));showToast("Atualizado!");}
-      setModalDespesa(null);
-    }catch(e){showToast(e.message,"error");}
-  };
-
-  // REPASSE handlers
-  const onContratoRepasse=(contratoId)=>{
-    const calc=calcRepasseAuto(contratoId);
-    setFormRepasse(p=>({...p,contratoId,...calc}));
-  };
-
-  const saveRepasse=async()=>{
-    if(!formRepasse.contratoId||!formRepasse.competencia) return;
-    try{
-      const n=await api.createRepasse({...formRepasse,contratoId:+formRepasse.contratoId,valorRecebido:+formRepasse.valorRecebido,totalDespesas:+formRepasse.totalDespesas,taxaAdm:+formRepasse.taxaAdm,valorLiquido:+formRepasse.valorLiquido});
-      setRepasses(p=>[n,...p]);
-      if(comprovanteFile&&n.id){await api.uploadComprovante(n.id,comprovanteFile);}
-      showToast("Repasse gerado!");setModalRepasse(null);setComprovanteFile(null);
-    }catch(e){showToast(e.message,"error");}
-  };
-
-  const uploadComprovante=async(id)=>{
-    if(!comprovanteFile) return;
-    try{
-      await api.uploadComprovante(id,comprovanteFile);
-      setRepasses(p=>p.map(r=>r.id===id?{...r,status:"Repassado",comprovanteNome:comprovanteFile.name}:r));
-      setComprovanteFile(null);setRepasseId(null);showToast("Comprovante anexado!");
-    }catch(e){showToast(e.message,"error");}
-  };
-
-  // Relatório
-  const locadoresUnicos=[...new Set(contratos.map(c=>c.locador))].sort();
-  const dadosRelatorio=useMemo(()=>{
-    if(!relLocador) return null;
-    const meusCon=contratos.filter(c=>c.locador===relLocador);
-    const filtrar=(data)=>{
-      if(!relMesInicio&&!relMesFim) return true;
-      const d=(data+"").slice(0,7);
-      if(relMesInicio&&d<relMesInicio) return false;
-      if(relMesFim&&d>relMesFim) return false;
-      return true;
-    };
-    return meusCon.map(c=>({
-      c,
-      parcs:parcelas.filter(p=>p.contratoId===c.id&&filtrar(p.dataRecebimento)),
-      desps:despesas.filter(d=>d.contratoId===c.id&&filtrar(d.data)),
-      reps:repasses.filter(r=>r.contratoId===c.id&&filtrar(r.dataRepasse)),
-    })).map(x=>({...x,
-      totalRec:x.parcs.filter(p=>p.status==="Pago").reduce((s,p)=>s+Number(p.valorRecebido||0),0),
-      totalDesp:x.desps.reduce((s,d)=>s+Number(d.valor),0),
-      totalRep:x.reps.reduce((s,r)=>s+Number(r.valorLiquido),0),
-    }));
-  },[relLocador,relMesInicio,relMesFim,contratos,parcelas,despesas,repasses]);
-
+  // Styles
   const s={
     app:{minHeight:"100vh",background:"#0a0e1a",fontFamily:"'DM Sans',sans-serif",color:"#e2e8f0"},
     sidebar:{position:"fixed",top:0,left:0,bottom:0,width:220,background:"#0f1623",borderRight:"1px solid #1e2940",display:"flex",flexDirection:"column",padding:"24px 0",zIndex:100},
     main:{marginLeft:220,padding:28,minHeight:"100vh"},
     card:{background:"#131929",border:"1px solid #1e2940",borderRadius:14,padding:20,marginBottom:16},
     btn:(c="#6366f1")=>({background:c,color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit"}),
-    btnGhost:{background:"transparent",color:"#94a3b8",border:"1px solid #2d3748",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontWeight:500,fontSize:13,fontFamily:"inherit"},
-    th:{textAlign:"left",padding:"10px 14px",color:"#64748b",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1},
-    td:{padding:"11px 14px",fontSize:13,borderTop:"1px solid #1e2940",color:"#cbd5e1"},
-    statCard:{background:"#131929",border:"1px solid #1e2940",borderRadius:14,padding:"18px 20px",flex:1,minWidth:130},
+    btnG:{background:"transparent",color:"#94a3b8",border:"1px solid #2d3748",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontWeight:500,fontSize:13,fontFamily:"inherit"},
+    th:{textAlign:"left",padding:"9px 12px",color:"#64748b",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1},
+    td:{padding:"10px 12px",fontSize:13,borderTop:"1px solid #1e2940",color:"#cbd5e1"},
+    sc:{background:"#131929",border:"1px solid #1e2940",borderRadius:14,padding:"16px 20px",flex:1,minWidth:120},
   };
 
   const navItems=[
     {id:"dashboard",icon:"◈",label:"Dashboard"},
-    {id:"proprietarios",icon:"👤",label:"Proprietários"},
-    {id:"imoveis",icon:"⌂",label:"Imóveis"},
+    ...(isInterno?[{id:"inadimplencia",icon:"⚠",label:"Inadimplência"}]:[]),
+    ...(isInterno?[{id:"locadores",icon:"👤",label:"Locadores"}]:[]),
+    ...(isInterno?[{id:"locatarios",icon:"🏠",label:"Locatários"}]:[]),
+    ...(isInterno?[{id:"imoveis",icon:"⌂",label:"Imóveis"}]:[]),
     {id:"contratos",icon:"📋",label:"Contratos"},
-    {id:"despesas",icon:"↑",label:"Despesas"},
+    ...(isInterno?[{id:"despesas",icon:"↑",label:"Despesas"}]:[]),
     {id:"repasses",icon:"⇌",label:"Repasses"},
-    {id:"relatorio",icon:"≡",label:"Relatório"},
+    ...(isInterno?[{id:"dre",icon:"$",label:"DRE / Previsão"}]:[]),
+    ...(isInterno?[{id:"relatorio",icon:"≡",label:"Relatório"}]:[]),
     ...(isAdmin?[{id:"usuarios",icon:"◎",label:"Usuários"}]:[]),
   ];
+
+  // Handlers
+  async function saveLocador(){
+    if(!formLocador.nome) return showToast("Nome obrigatório","error");
+    try{
+      if(modalLocador==="new"){const n=await api.createLocador(formLocador);setLocadores(p=>[...p,n]);showToast("Locador cadastrado!");}
+      else{const n=await api.updateLocador(modalLocador,formLocador);setLocadores(p=>p.map(x=>x.id===modalLocador?n:x));showToast("Atualizado!");}
+      setModalLocador(null);
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  async function saveLocatario(){
+    if(!formLocatario.nome) return showToast("Nome obrigatório","error");
+    try{
+      if(modalLocatario==="new"){const n=await api.createLocatario(formLocatario);setLocatarios(p=>[...p,n]);showToast("Locatário cadastrado!");}
+      else{const n=await api.updateLocatario(modalLocatario,formLocatario);setLocatarios(p=>p.map(x=>x.id===modalLocatario?n:x));showToast("Atualizado!");}
+      setModalLocatario(null);
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  async function saveImovel(){
+    if(!formImovel.codigo||!formImovel.endereco) return showToast("Código e endereço obrigatórios","error");
+    try{
+      if(modalImovel==="new"){const n=await api.createImovel(formImovel);setImoveis(p=>[...p,n]);showToast("Imóvel cadastrado!");}
+      else{const n=await api.updateImovel(modalImovel,formImovel);setImoveis(p=>p.map(x=>x.id===modalImovel?n:x));showToast("Atualizado!");}
+      setModalImovel(null);
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  async function saveContrato(){
+    if(!formContrato.imovelId||!formContrato.aluguelInicial) return showToast("Imóvel e aluguel obrigatórios","error");
+    const payload={...formContrato,aluguelInicial:+formContrato.aluguelInicial,condominio:+formContrato.condominio||0,iptu:+formContrato.iptu||0,caucao:+formContrato.caucao||0,taxaAdmPct:+formContrato.taxaAdmPct,vencimento:+formContrato.vencimento,duracaoMeses:+formContrato.duracaoMeses||null};
+    // Auto-fill from cadastros
+    if(formContrato.locatarioId){const l=locatarios.find(x=>x.id===+formContrato.locatarioId);if(l){payload.locatario=l.nome;payload.telefoneLocatario=l.telefone;}}
+    if(formContrato.locadorId){const l=locadores.find(x=>x.id===+formContrato.locadorId);if(l){payload.locador=l.nome;payload.telefoneLocador=l.telefone;}}
+    try{
+      if(modalContrato==="new"){const n=await api.createContrato(payload);if(contratoFile)await api.uploadContratoPdf(n.id,contratoFile);setContratos(p=>[n,...p]);showToast("Contrato criado com parcelas!");}
+      else{const n=await api.updateContrato(modalContrato,payload);if(contratoFile)await api.uploadContratoPdf(modalContrato,contratoFile);setContratos(p=>p.map(x=>x.id===modalContrato?n:x));showToast("Atualizado!");}
+      setModalContrato(null);setContratoFile(null);
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  async function openParcelas(contratoId){
+    try{
+      const [p,r]=await Promise.all([api.getParcelas(contratoId),api.getReajustes(contratoId)]);
+      setParcelas(p);setReajustes(r);setModalParcelas(contratoId);
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  async function saveParcela(){
+    try{
+      const n=await api.updateParcela(parcelaEdit.id,parcelaEdit);
+      setParcelas(p=>p.map(x=>x.id===parcelaEdit.id?n:x));
+      setParcelaEdit(null);showToast("Parcela atualizada!");
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  async function saveReajuste(){
+    if(!formReajuste.dataReajuste||!formReajuste.valorNovo) return showToast("Preencha data e valor","error");
+    try{
+      const n=await api.createReajuste(modalReajuste,{...formReajuste,valorAnterior:+formReajuste.valorAnterior,percentual:+formReajuste.percentual,valorNovo:+formReajuste.valorNovo});
+      setReajustes(p=>[n,...p]);
+      setContratos(p=>p.map(c=>c.id===+modalReajuste?{...c,aluguelAtual:+formReajuste.valorNovo}:c));
+      showToast("Reajuste registrado!");setFormReajuste(emptyReajuste);
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  async function saveDespesa(){
+    if(!formDespesa.contratoId||!formDespesa.data||!formDespesa.valor) return;
+    try{
+      if(modalDespesa==="new"){const n=await api.createDespesa({...formDespesa,valor:+formDespesa.valor,contratoId:+formDespesa.contratoId});setDespesas(p=>[n,...p]);showToast("Despesa registrada!");}
+      else{const n=await api.updateDespesa(modalDespesa,{...formDespesa,valor:+formDespesa.valor,contratoId:+formDespesa.contratoId});setDespesas(p=>p.map(x=>x.id===modalDespesa?n:x));showToast("Atualizado!");}
+      setModalDespesa(null);
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  function calcRepasse(contratoId){
+    const c=contratos.find(x=>x.id===+contratoId);
+    if(!c) return {};
+    const vb=Number(c.aluguelAtual);
+    const ta=(vb*Number(c.taxaAdmPct))/100;
+    const td=despesas.filter(d=>d.contratoId===+contratoId).reduce((s,d)=>s+Number(d.valor),0);
+    return{valorRecebido:vb.toFixed(2),totalDespesas:td.toFixed(2),taxaAdm:ta.toFixed(2),valorLiquido:(vb-td-ta).toFixed(2)};
+  }
+
+  async function saveRepasse(){
+    if(!formRepasse.contratoId||!formRepasse.competencia) return;
+    try{
+      const n=await api.createRepasse({...formRepasse,contratoId:+formRepasse.contratoId,valorRecebido:+formRepasse.valorRecebido,totalDespesas:+formRepasse.totalDespesas,taxaAdm:+formRepasse.taxaAdm,valorLiquido:+formRepasse.valorLiquido});
+      if(comprovanteFile)await api.uploadComprovante(n.id,comprovanteFile);
+      setRepasses(p=>[n,...p]);showToast("Repasse gerado!");setModalRepasse(null);setComprovanteFile(null);
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  async function marcarRepassado(id){
+    if(!comprovanteFile) return showToast("Selecione o comprovante","error");
+    try{
+      await api.uploadComprovante(id,comprovanteFile);
+      setRepasses(p=>p.map(r=>r.id===id?{...r,status:"Repassado"}:r));
+      setComprovanteFile(null);setRepasseId(null);showToast("Repassado com sucesso!");
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  async function loadDre(){
+    try{const d=await api.getDre(dreInicio,dreFim);setDreData(d);}
+    catch(e){showToast(e.message,"error");}
+  }
+
+  // Relatório
+  const locadoresUnicos=[...new Set(contratos.map(c=>c.locador))].sort();
+  const dadosRelatorio=useMemo(()=>{
+    if(!relLocador) return null;
+    return contratos.filter(c=>c.locador===relLocador).map(c=>({
+      c,
+      parcs:[],
+      desps:despesas.filter(d=>d.contratoId===c.id&&((!relMesInicio||(d.data||"").slice(0,7)>=relMesInicio)&&(!relMesFim||(d.data||"").slice(0,7)<=relMesFim))),
+      reps:repasses.filter(r=>r.contratoId===c.id&&((!relMesInicio||(r.dataRepasse||"").slice(0,7)>=relMesInicio)&&(!relMesFim||(r.dataRepasse||"").slice(0,7)<=relMesFim))),
+    })).map(x=>({...x,
+      totalDesp:x.desps.reduce((s,d)=>s+Number(d.valor),0),
+      totalRep:x.reps.reduce((s,r)=>s+Number(r.valorLiquido),0),
+    }));
+  },[relLocador,relMesInicio,relMesFim,contratos,despesas,repasses]);
 
   if(loading) return(
     <div style={{...s.app,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
@@ -320,26 +392,26 @@ export default function App(){
 
   return(
     <div style={s.app}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');*{box-sizing:border-box}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#0a0e1a}::-webkit-scrollbar-thumb{background:#2d3748;border-radius:3px}table{width:100%;border-collapse:collapse}input,select,textarea{font-family:'DM Sans',sans-serif}select option{background:#1a1f2e}@keyframes fadeIn{from{opacity:0}to{opacity:1}}`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');*{box-sizing:border-box}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#0a0e1a}::-webkit-scrollbar-thumb{background:#2d3748;border-radius:3px}table{width:100%;border-collapse:collapse}input,select,textarea{font-family:'DM Sans',sans-serif}select option{background:#1a1f2e}`}</style>
       {toast&&<Toast msg={toast.msg} type={toast.type}/>}
 
       {/* SIDEBAR */}
       <div style={s.sidebar}>
         <div style={{padding:"0 20px 20px",borderBottom:"1px solid #1e2940"}}>
           <div style={{fontSize:11,color:"#6366f1",fontWeight:700,letterSpacing:2,textTransform:"uppercase"}}>Imobiliária</div>
-          <div style={{fontSize:17,fontWeight:800,color:"#e2e8f0",marginTop:2}}>Gestão de Aluguel</div>
+          <div style={{fontSize:16,fontWeight:800,color:"#e2e8f0",marginTop:2}}>Gestão de Aluguel</div>
         </div>
-        <nav style={{marginTop:12,flex:1}}>
+        <nav style={{marginTop:12,flex:1,overflowY:"auto"}}>
           {navItems.map(n=>(
-            <button key={n.id} onClick={()=>setTab(n.id)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"10px 20px",background:tab===n.id?"#6366f120":"none",border:"none",borderLeft:`3px solid ${tab===n.id?"#6366f1":"transparent"}`,color:tab===n.id?"#818cf8":"#64748b",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:14,textAlign:"left"}}>
+            <button key={n.id} onClick={()=>setTab(n.id)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 20px",background:tab===n.id?"#6366f120":"none",border:"none",borderLeft:`3px solid ${tab===n.id?"#6366f1":"transparent"}`,color:tab===n.id?"#818cf8":"#64748b",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,textAlign:"left"}}>
               <span>{n.icon}</span>{n.label}
             </button>
           ))}
         </nav>
-        <div style={{padding:"14px 20px",borderTop:"1px solid #1e2940"}}>
-          <div style={{fontSize:13,color:"#94a3b8",fontWeight:500,marginBottom:2}}>{user?.nome}</div>
-          <div style={{fontSize:11,color:"#475569",marginBottom:8}}>{isAdmin?"Administrador":"Usuário"}</div>
-          <button onClick={()=>{localStorage.clear();window.location.reload();}} style={{...s.btnGhost,fontSize:12,padding:"5px 12px",color:"#ef4444",borderColor:"#ef444430",width:"100%"}}>Sair</button>
+        <div style={{padding:"12px 20px",borderTop:"1px solid #1e2940"}}>
+          <div style={{fontSize:12,color:"#94a3b8",fontWeight:500,marginBottom:2}}>{user?.nome}</div>
+          <div style={{fontSize:11,color:"#475569",marginBottom:8}}>{isAdmin?"Admin":user?.tipoAcesso==="locador"?"Locador":"Locatário"}</div>
+          <button onClick={()=>{localStorage.clear();window.location.reload();}} style={{...s.btnG,fontSize:12,padding:"5px 12px",color:"#ef4444",borderColor:"#ef444430",width:"100%"}}>Sair</button>
         </div>
       </div>
 
@@ -349,34 +421,32 @@ export default function App(){
         {/* DASHBOARD */}
         {tab==="dashboard"&&(
           <div>
-            <h2 style={{fontWeight:800,fontSize:24,marginBottom:6}}>Dashboard</h2>
-            <p style={{color:"#475569",marginBottom:20,fontSize:14}}>Visão geral da carteira</p>
-            <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+            <h2 style={{fontWeight:800,fontSize:22,marginBottom:6}}>Dashboard</h2>
+            <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
               {[
                 {label:"Contratos Ativos",value:dashboard?.contratosAtivos||0,color:"#6366f1",fmt:false},
                 {label:"Carteira Mensal",value:dashboard?.carteiraMensal||0,color:"#818cf8",fmt:true},
                 {label:"Recebido (mês)",value:dashboard?.recebidoMes||0,color:"#22c55e",fmt:true},
                 {label:"Despesas (mês)",value:dashboard?.despesasMes||0,color:"#f59e0b",fmt:true},
                 {label:"Repassado (mês)",value:dashboard?.repassadoMes||0,color:"#06b6d4",fmt:true},
+                {label:"Inadimplentes",value:dashboard?.inadimplentesQtd||0,color:"#ef4444",fmt:false,sub:fmt(dashboard?.inadimplentesValor||0)},
               ].map(m=>(
-                <div key={m.label} style={s.statCard}>
-                  <div style={{fontSize:11,color:"#64748b",fontWeight:600,marginBottom:4}}>{m.label}</div>
-                  <div style={{fontFamily:"'DM Mono',monospace",fontSize:18,fontWeight:700,color:m.color}}>{m.fmt?fmt(m.value):m.value}</div>
+                <div key={m.label} style={s.sc}>
+                  <div style={{fontSize:11,color:"#64748b",fontWeight:600,marginBottom:3}}>{m.label}</div>
+                  <div style={{fontFamily:"'DM Mono',monospace",fontSize:17,fontWeight:700,color:m.color}}>{m.fmt?fmt(m.value):m.value}</div>
+                  {m.sub&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>{m.sub}</div>}
                 </div>
               ))}
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:14}}>
+              <div style={s.card}><h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700}}>Recebimentos por mês</h3><BarChart data={dashboard?.recPorMes}/></div>
               <div style={s.card}>
-                <h3 style={{margin:"0 0 14px",fontSize:14,fontWeight:700}}>Recebimentos por mês</h3>
-                <BarChart data={dashboard?.recPorMes}/>
-              </div>
-              <div style={s.card}>
-                <h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700}}>⚠️ Vencendo em 7 dias</h3>
+                <h3 style={{margin:"0 0 10px",fontSize:14,fontWeight:700}}>⚠️ Vencendo em 7 dias</h3>
                 {(dashboard?.vencendo||[]).length===0?<div style={{color:"#475569",fontSize:13}}>Nenhuma parcela vencendo</div>:
                 (dashboard?.vencendo||[]).map(p=>(
-                  <div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2940"}}>
-                    <div><div style={{fontSize:13,fontWeight:600}}>{p.codigo}</div><div style={{fontSize:11,color:"#64748b"}}>{p.competencia}</div></div>
-                    <div style={{textAlign:"right"}}><div style={{fontSize:12,fontFamily:"monospace",color:"#f59e0b"}}>{fmt(p.valor)}</div><div style={{fontSize:11,color:"#64748b"}}>{fmtDate(p.vencimento)}</div></div>
+                  <div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #1e2940"}}>
+                    <div><div style={{fontSize:12,fontWeight:600}}>{p.codigo}</div><div style={{fontSize:11,color:"#64748b"}}>{p.locatario} · {p.competencia}</div></div>
+                    <div style={{fontFamily:"monospace",fontSize:12,color:"#f59e0b"}}>{fmt(p.valor)}</div>
                   </div>
                 ))}
               </div>
@@ -384,58 +454,110 @@ export default function App(){
           </div>
         )}
 
-        {/* PROPRIETÁRIOS */}
-        {tab==="proprietarios"&&(
+        {/* INADIMPLÊNCIA */}
+        {tab==="inadimplencia"&&isInterno&&(
           <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div><h2 style={{fontWeight:800,fontSize:24,margin:0}}>Proprietários</h2><p style={{color:"#475569",fontSize:14,marginTop:4}}>Cadastro de proprietários dos imóveis</p></div>
-              {isAdmin&&<button style={s.btn()} onClick={()=>{setFormProprietario(emptyProprietario);setModalProprietario("new");}}>+ Novo Proprietário</button>}
+            <h2 style={{fontWeight:800,fontSize:22,marginBottom:16}}>Controle de Inadimplência</h2>
+            <div style={s.card}>
+              {inadimplencia.length===0?<div style={{color:"#475569",textAlign:"center",padding:32}}>Nenhuma parcela em atraso! 🎉</div>:
+              <table><thead><tr>
+                <th style={s.th}>Imóvel</th><th style={s.th}>Locatário</th><th style={s.th}>Competência</th><th style={s.th}>Vencimento</th>
+                <th style={s.th}>Dias</th><th style={s.th}>Valor</th><th style={s.th}>Multa</th><th style={s.th}>Juros</th><th style={s.th}>Total</th>
+              </tr></thead>
+              <tbody>{inadimplencia.map(p=>(
+                <tr key={p.id}>
+                  <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8"}}>{p.codigo}</span></td>
+                  <td style={s.td}>{p.locatario}</td>
+                  <td style={s.td}>{p.competencia}</td>
+                  <td style={{...s.td,color:"#ef4444"}}>{fmtDate(p.vencimento)}</td>
+                  <td style={{...s.td,color:"#ef4444",fontWeight:700}}>{p.diasAtrasaCalc||p.dias_atraso_calc} dias</td>
+                  <td style={{...s.td,fontFamily:"monospace"}}>{fmt(p.valor)}</td>
+                  <td style={{...s.td,fontFamily:"monospace",color:"#f59e0b"}}>{fmt(p.valorMulta)}</td>
+                  <td style={{...s.td,fontFamily:"monospace",color:"#f59e0b"}}>{fmt(p.valorJuros)}</td>
+                  <td style={{...s.td,fontFamily:"monospace",color:"#ef4444",fontWeight:700}}>{fmt(p.totalDevido)}</td>
+                </tr>
+              ))}</tbody></table>}
+            </div>
+          </div>
+        )}
+
+        {/* LOCADORES */}
+        {tab==="locadores"&&isInterno&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <h2 style={{fontWeight:800,fontSize:22,margin:0}}>Locadores</h2>
+              {isAdmin&&<button style={s.btn()} onClick={()=>{setFormLocador(emptyLocador);setModalLocador("new");}}>+ Novo Locador</button>}
             </div>
             <div style={s.card}>
-              <table><thead><tr><th style={s.th}>Nome</th><th style={s.th}>CPF/CNPJ</th><th style={s.th}>Telefone</th><th style={s.th}>Email</th><th style={s.th}>Banco</th><th style={s.th}>PIX</th><th style={s.th}></th></tr></thead>
-                <tbody>{proprietarios.map(p=><tr key={p.id}>
-                  <td style={s.td}><span style={{fontWeight:600}}>{p.nome}</span></td>
-                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{p.cpfCnpj||"—"}</td>
-                  <td style={s.td}>{p.telefone||"—"}</td>
-                  <td style={{...s.td,color:"#64748b"}}>{p.email||"—"}</td>
-                  <td style={s.td}>{p.banco?`${p.banco} ag.${p.agencia} c.${p.conta}`:"—"}</td>
-                  <td style={s.td}>{p.pix||"—"}</td>
-                  <td style={s.td}>{isAdmin&&<div style={{display:"flex",gap:6}}>
-                    <button style={s.btnGhost} onClick={()=>{setFormProprietario({...p});setModalProprietario(p.id);}}>✎</button>
-                    <button style={{...s.btnGhost,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteProprietario(p.id);setProprietarios(x=>x.filter(i=>i.id!==p.id));}}>✕</button>
-                  </div>}</td>
+              <table><thead><tr><th style={s.th}>Nome</th><th style={s.th}>CPF/CNPJ</th><th style={s.th}>Telefone</th><th style={s.th}>Email</th><th style={s.th}>PIX</th><th style={s.th}></th></tr></thead>
+                <tbody>{locadores.map(l=><tr key={l.id}>
+                  <td style={s.td}><span style={{fontWeight:600}}>{l.nome}</span></td>
+                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{l.cpfCnpj||"—"}</td>
+                  <td style={s.td}>{l.telefone||"—"}</td>
+                  <td style={{...s.td,color:"#64748b"}}>{l.email||"—"}</td>
+                  <td style={s.td}>{l.pix||"—"}</td>
+                  <td style={s.td}><div style={{display:"flex",gap:6}}>
+                    <button style={s.btnG} onClick={()=>setModalDetalhe({tipo:"locador",data:l})}>Ver</button>
+                    {isAdmin&&<><button style={s.btnG} onClick={()=>{setFormLocador({...l});setModalLocador(l.id);}}>✎</button>
+                    <button style={{...s.btnG,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteLocador(l.id);setLocadores(p=>p.filter(x=>x.id!==l.id));}}>✕</button></>}
+                  </div></td>
                 </tr>)}</tbody>
               </table>
             </div>
           </div>
         )}
-        {tab==="imoveis"&&(
+
+        {/* LOCATÁRIOS */}
+        {tab==="locatarios"&&isInterno&&(
           <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div><h2 style={{fontWeight:800,fontSize:24,margin:0}}>Imóveis</h2><p style={{color:"#475569",fontSize:14,marginTop:4}}>Cadastro e situação atual</p></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <h2 style={{fontWeight:800,fontSize:22,margin:0}}>Locatários</h2>
+              {isAdmin&&<button style={s.btn()} onClick={()=>{setFormLocatario(emptyLocatario);setModalLocatario("new");}}>+ Novo Locatário</button>}
+            </div>
+            <div style={s.card}>
+              <table><thead><tr><th style={s.th}>Nome</th><th style={s.th}>CPF</th><th style={s.th}>Telefone</th><th style={s.th}>Email</th><th style={s.th}>Profissão</th><th style={s.th}></th></tr></thead>
+                <tbody>{locatarios.map(l=><tr key={l.id}>
+                  <td style={s.td}><span style={{fontWeight:600}}>{l.nome}</span></td>
+                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{l.cpf||"—"}</td>
+                  <td style={s.td}>{l.telefone||"—"}</td>
+                  <td style={{...s.td,color:"#64748b"}}>{l.email||"—"}</td>
+                  <td style={s.td}>{l.profissao||"—"}</td>
+                  <td style={s.td}><div style={{display:"flex",gap:6}}>
+                    <button style={s.btnG} onClick={()=>setModalDetalhe({tipo:"locatario",data:l})}>Ver</button>
+                    {isAdmin&&<><button style={s.btnG} onClick={()=>{setFormLocatario({...l,renda:String(l.renda||"")});setModalLocatario(l.id);}}>✎</button>
+                    <button style={{...s.btnG,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteLocatario(l.id);setLocatarios(p=>p.filter(x=>x.id!==l.id));}}>✕</button></>}
+                  </div></td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* IMÓVEIS */}
+        {tab==="imoveis"&&isInterno&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <h2 style={{fontWeight:800,fontSize:22,margin:0}}>Imóveis</h2>
               {isAdmin&&<button style={s.btn()} onClick={()=>{setFormImovel(emptyImovel);setModalImovel("new");}}>+ Novo Imóvel</button>}
             </div>
             <div style={s.card}>
               <table><thead><tr>
-                <th style={s.th}>Código</th><th style={s.th}>Endereço</th><th style={s.th}>Proprietário</th>
-                <th style={s.th}>Locatário Atual</th><th style={s.th}>Aluguel</th>
-                <th style={s.th}>Cond.</th><th style={s.th}>IPTU</th><th style={s.th}>Venc.</th>
+                <th style={s.th}>Código</th><th style={s.th}>Endereço</th><th style={s.th}>Locador</th>
+                <th style={s.th}>Locatário Atual</th><th style={s.th}>Aluguel</th><th style={s.th}>Venc.</th>
                 <th style={s.th}>Status</th><th style={s.th}></th>
               </tr></thead>
                 <tbody>{imoveis.map(im=><tr key={im.id}>
                   <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8",fontWeight:700}}>{im.codigo}</span></td>
-                  <td style={{...s.td,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{im.endereco}</td>
-                  <td style={s.td}>{im.proprietarioNome||"—"}</td>
+                  <td style={{...s.td,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{im.endereco}</td>
+                  <td style={s.td}>{im.locadorNome||"—"}</td>
                   <td style={s.td}>{im.locatarioAtual||<span style={{color:"#475569"}}>Vago</span>}</td>
                   <td style={{...s.td,fontFamily:"monospace",color:"#22c55e",fontSize:12}}>{im.aluguelAtual?fmt(im.aluguelAtual):"—"}</td>
-                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{im.condominioAtual?fmt(im.condominioAtual):"—"}</td>
-                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{im.iptuAtual?fmt(im.iptuAtual):"—"}</td>
                   <td style={s.td}>{im.vencimentoAtual?`Dia ${im.vencimentoAtual}`:"—"}</td>
                   <td style={s.td}><Badge label={im.statusAtual||"Vago"}/></td>
                   <td style={s.td}><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                    {isAdmin&&<><button style={s.btnGhost} onClick={()=>{setFormImovel({...im,area:String(im.area||""),quartos:String(im.quartos||""),valorIdeal:String(im.valorIdeal||""),proprietarioId:String(im.proprietarioId||"")});setModalImovel(im.id);}}>✎</button>
-                    <button style={{...s.btnGhost,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteImovel(im.id);setImoveis(p=>p.filter(i=>i.id!==im.id));}}>✕</button></>}
-                    <button style={{...s.btnGhost,color:"#06b6d4",borderColor:"#06b6d430"}} onClick={async()=>{const docs=await api.getDocumentos(im.id);setDocumentos(docs);setDetalheImovel(im);setUploadDocFile(null);}}>Docs</button>
+                    <button style={s.btnG} onClick={()=>setModalDetalhe({tipo:"imovel",data:im})}>Ver</button>
+                    {isAdmin&&<><button style={s.btnG} onClick={()=>{setFormImovel({...im,area:String(im.area||""),quartos:String(im.quartos||""),valorIdeal:String(im.valorIdeal||""),locadorId:String(im.locadorId||"")});setModalImovel(im.id);}}>✎</button>
+                    <button style={{...s.btnG,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteImovel(im.id);setImoveis(p=>p.filter(x=>x.id!==im.id));}}>✕</button></>}
                   </div></td>
                 </tr>)}</tbody>
               </table>
@@ -446,26 +568,30 @@ export default function App(){
         {/* CONTRATOS */}
         {tab==="contratos"&&(
           <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div><h2 style={{fontWeight:800,fontSize:24,margin:0}}>Contratos</h2><p style={{color:"#475569",fontSize:14,marginTop:4}}>Histórico de contratos por imóvel</p></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <h2 style={{fontWeight:800,fontSize:22,margin:0}}>Contratos</h2>
               {isAdmin&&<button style={s.btn()} onClick={()=>{setFormContrato(emptyContrato);setContratoFile(null);setModalContrato("new");}}>+ Novo Contrato</button>}
             </div>
             <div style={s.card}>
-              <table><thead><tr><th style={s.th}>Imóvel</th><th style={s.th}>Locatário</th><th style={s.th}>Locador</th><th style={s.th}>Al. Inicial</th><th style={s.th}>Al. Atual</th><th style={s.th}>Início</th><th style={s.th}>Fim</th><th style={s.th}>Status</th><th style={s.th}></th></tr></thead>
+              <table><thead><tr>
+                <th style={s.th}>Imóvel</th><th style={s.th}>Locatário</th><th style={s.th}>Locador</th>
+                <th style={s.th}>Al. Inicial</th><th style={s.th}>Al. Atual</th>
+                <th style={s.th}>Início</th><th style={s.th}>Fim</th><th style={s.th}>Status</th><th style={s.th}></th>
+              </tr></thead>
                 <tbody>{contratos.map(c=><tr key={c.id}>
                   <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8",fontWeight:700}}>{c.codigo}</span></td>
-                  <td style={s.td}>{c.locatario}</td>
-                  <td style={s.td}>{c.locador}</td>
-                  <td style={{...s.td,fontFamily:"monospace"}}>{fmt(c.aluguelInicial)}</td>
-                  <td style={{...s.td,fontFamily:"monospace",color:Number(c.aluguelAtual)>Number(c.aluguelInicial)?"#22c55e":"#e2e8f0"}}>{fmt(c.aluguelAtual)}</td>
+                  <td style={s.td}>{c.locatarioNomeFull||c.locatario}</td>
+                  <td style={s.td}>{c.locadorNomeFull||c.locador}</td>
+                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{fmt(c.aluguelInicial)}</td>
+                  <td style={{...s.td,fontFamily:"monospace",fontSize:12,color:Number(c.aluguelAtual)>Number(c.aluguelInicial)?"#22c55e":"#e2e8f0"}}>{fmt(c.aluguelAtual)}</td>
                   <td style={s.td}>{fmtDate(c.inicio)}</td>
-                  <td style={{...s.td,color:c.fim&&new Date(c.fim)<new Date()?"#ef4444":"#64748b",fontSize:12}}>{fmtDate(c.fim)}</td>
+                  <td style={{...s.td,fontSize:12,color:c.fim&&new Date(c.fim)<new Date()?"#ef4444":"#64748b"}}>{fmtDate(c.fim)}</td>
                   <td style={s.td}><Badge label={c.status}/></td>
-                  <td style={s.td}><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                    <button style={s.btnGhost} onClick={()=>setDetalheContrato(c)}>Ver</button>
-                    <button style={{...s.btnGhost,color:"#818cf8",borderColor:"#6366f130"}} onClick={()=>openParcelas(c.id)}>Parcelas</button>
-                    <button style={{...s.btnGhost,color:"#f59e0b",borderColor:"#f59e0b30"}} onClick={()=>{setFormReajuste({...emptyReajuste,valorAnterior:c.aluguelAtual});setModalReajuste(c.id);}}>Reajuste</button>
-                    {isAdmin&&<button style={s.btnGhost} onClick={()=>{setFormContrato({...c,aluguelInicial:String(c.aluguelInicial),aluguelAtual:String(c.aluguelAtual),condominio:String(c.condominio||0),iptu:String(c.iptu||0),taxaAdmPct:String(c.taxaAdmPct),vencimento:String(c.vencimento),duracaoMeses:String(c.duracaoMeses||""),imovelId:String(c.imovelId)});setContratoFile(null);setModalContrato(c.id);}}>✎</button>}
+                  <td style={s.td}><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                    <button style={s.btnG} onClick={()=>setModalDetalhe({tipo:"contrato",data:c})}>Ver</button>
+                    <button style={{...s.btnG,color:"#818cf8",borderColor:"#6366f130"}} onClick={()=>openParcelas(c.id)}>Parcelas</button>
+                    {isAdmin&&<><button style={{...s.btnG,color:"#f59e0b",borderColor:"#f59e0b30"}} onClick={()=>{setFormReajuste({...emptyReajuste,valorAnterior:c.aluguelAtual});setModalReajuste(c.id);}}>Reajuste</button>
+                    <button style={s.btnG} onClick={()=>{setFormContrato({...c,aluguelInicial:String(c.aluguelInicial),aluguelAtual:String(c.aluguelAtual||c.aluguelInicial),condominio:String(c.condominio||0),iptu:String(c.iptu||0),caucao:String(c.caucao||0),taxaAdmPct:String(c.taxaAdmPct),vencimento:String(c.vencimento),duracaoMeses:String(c.duracaoMeses||""),imovelId:String(c.imovelId),locatarioId:String(c.locatarioId||""),locadorId:String(c.locadorId||"")});setContratoFile(null);setModalContrato(c.id);}}>✎</button></>}
                   </div></td>
                 </tr>)}</tbody>
               </table>
@@ -474,22 +600,22 @@ export default function App(){
         )}
 
         {/* DESPESAS */}
-        {tab==="despesas"&&(
+        {tab==="despesas"&&isInterno&&(
           <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div><h2 style={{fontWeight:800,fontSize:24,margin:0}}>Despesas</h2></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <h2 style={{fontWeight:800,fontSize:22,margin:0}}>Despesas</h2>
               <button style={s.btn("#f59e0b")} onClick={()=>{setFormDespesa(emptyDespesa);setModalDespesa("new");}}>+ Registrar</button>
             </div>
             <div style={s.card}>
               <table><thead><tr><th style={s.th}>Contrato</th><th style={s.th}>Data</th><th style={s.th}>Tipo</th><th style={s.th}>Descrição</th><th style={s.th}>Valor</th><th style={s.th}>Status</th><th style={s.th}></th></tr></thead>
                 <tbody>{despesas.map(d=><tr key={d.id}>
-                  <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8"}}>{d.codigo}</span><span style={{color:"#64748b",marginLeft:6,fontSize:12}}>{d.locatario}</span></td>
+                  <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8"}}>{d.codigo}</span></td>
                   <td style={s.td}>{fmtDate(d.data)}</td><td style={s.td}>{d.tipo}</td><td style={s.td}>{d.descricao}</td>
                   <td style={{...s.td,fontFamily:"monospace",color:"#f59e0b"}}>{fmt(d.valor)}</td>
                   <td style={s.td}><Badge label={d.status}/></td>
                   <td style={s.td}><div style={{display:"flex",gap:6}}>
-                    <button style={s.btnGhost} onClick={()=>{setFormDespesa({...d,contratoId:String(d.contratoId),valor:String(d.valor)});setModalDespesa(d.id);}}>✎</button>
-                    {isAdmin&&<button style={{...s.btnGhost,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{await api.deleteDespesa(d.id);setDespesas(p=>p.filter(x=>x.id!==d.id));}}>✕</button>}
+                    <button style={s.btnG} onClick={()=>{setFormDespesa({...d,contratoId:String(d.contratoId),valor:String(d.valor)});setModalDespesa(d.id);}}>✎</button>
+                    {isAdmin&&<button style={{...s.btnG,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{await api.deleteDespesa(d.id);setDespesas(p=>p.filter(x=>x.id!==d.id));}}>✕</button>}
                   </div></td>
                 </tr>)}</tbody>
               </table>
@@ -500,26 +626,28 @@ export default function App(){
         {/* REPASSES */}
         {tab==="repasses"&&(
           <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div><h2 style={{fontWeight:800,fontSize:24,margin:0}}>Repasses</h2></div>
-              {isAdmin&&<button style={s.btn("#06b6d4")} onClick={()=>{setFormRepasse(emptyRepasse);setModalRepasse("new");}}>+ Gerar Repasse</button>}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <h2 style={{fontWeight:800,fontSize:22,margin:0}}>Repasses</h2>
+              {isAdmin&&<button style={s.btn("#06b6d4")} onClick={()=>{setFormRepasse(emptyRepasse);setComprovanteFile(null);setModalRepasse("new");}}>+ Gerar Repasse</button>}
             </div>
             <div style={s.card}>
-              <table><thead><tr><th style={s.th}>Contrato</th><th style={s.th}>Competência</th><th style={s.th}>Recebido</th><th style={s.th}>Despesas</th><th style={s.th}>Taxa</th><th style={s.th}>Líquido</th><th style={s.th}>Pagamento</th><th style={s.th}>Status</th><th style={s.th}></th></tr></thead>
+              <table><thead><tr>
+                <th style={s.th}>Contrato</th><th style={s.th}>Competência</th><th style={s.th}>Recebido</th>
+                <th style={s.th}>Despesas</th><th style={s.th}>Taxa</th><th style={s.th}>Líquido</th>
+                <th style={s.th}>Pagamento</th><th style={s.th}>Status</th><th style={s.th}></th>
+              </tr></thead>
                 <tbody>{repasses.map(r=><tr key={r.id}>
                   <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8"}}>{r.codigo}</span></td>
                   <td style={s.td}>{r.competencia}</td>
-                  <td style={{...s.td,fontFamily:"monospace"}}>{fmt(r.valorRecebido)}</td>
-                  <td style={{...s.td,fontFamily:"monospace",color:"#f59e0b"}}>{fmt(r.totalDespesas)}</td>
-                  <td style={{...s.td,fontFamily:"monospace",color:"#f59e0b"}}>{fmt(r.taxaAdm)}</td>
-                  <td style={{...s.td,fontFamily:"monospace",color:"#22c55e",fontWeight:700}}>{fmt(r.valorLiquido)}</td>
+                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{fmt(r.valorRecebido)}</td>
+                  <td style={{...s.td,fontFamily:"monospace",fontSize:12,color:"#f59e0b"}}>{fmt(r.totalDespesas)}</td>
+                  <td style={{...s.td,fontFamily:"monospace",fontSize:12,color:"#f59e0b"}}>{fmt(r.taxaAdm)}</td>
+                  <td style={{...s.td,fontFamily:"monospace",fontWeight:700,color:"#22c55e"}}>{fmt(r.valorLiquido)}</td>
                   <td style={s.td}>{r.formaPagamento}</td>
                   <td style={s.td}><Badge label={r.status}/></td>
                   <td style={s.td}><div style={{display:"flex",gap:6}}>
-                    {r.status!=="Repassado"&&isAdmin&&(
-                      <button style={s.btn("#22c55e")} onClick={()=>{setRepasseId(r.id);setComprovanteFile(null);}}>Marcar Repassado</button>
-                    )}
-                    {r.comprovanteNome&&<button style={s.btnGhost} onClick={async()=>{try{const{url}=await api.getComprovanteUrl(r.id);window.open(url,"_blank");}catch(e){showToast(e.message,"error");}}}>Comprovante</button>}
+                    {r.status!=="Repassado"&&isAdmin&&<button style={s.btn("#22c55e")} onClick={()=>{setRepasseId(r.id);setComprovanteFile(null);}}>✓ Repassar</button>}
+                    {r.comprovanteNome&&<button style={s.btnG} onClick={async()=>{try{const{url}=await api.getComprovanteUrl(r.id);window.open(url,"_blank");}catch(e){showToast(e.message,"error");}}}>Comprovante</button>}
                   </div></td>
                 </tr>)}</tbody>
               </table>
@@ -527,51 +655,93 @@ export default function App(){
           </div>
         )}
 
-        {/* RELATÓRIO */}
-        {tab==="relatorio"&&(
+        {/* DRE */}
+        {tab==="dre"&&isInterno&&(
           <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
-              <div><h2 style={{fontWeight:800,fontSize:24,margin:0}}>Relatório Financeiro</h2></div>
-              {relGerado&&dadosRelatorio?.length>0&&<button style={s.btn()} onClick={()=>{const w=window.open("","_blank");w.document.write(`<html><head><title>Relatório</title><style>body{font-family:sans-serif;padding:32px;color:#1a202c}table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0}th{background:#f1f5f9;padding:7px 10px;text-align:left}td{padding:7px 10px;border-bottom:1px solid #e2e8f0}</style></head><body>${printRef.current?.innerHTML||""}</body></html>`);w.document.close();setTimeout(()=>w.print(),400);}}>⎙ Imprimir</button>}
+            <h2 style={{fontWeight:800,fontSize:22,marginBottom:16}}>DRE e Previsão de Recebimentos</h2>
+            <div style={{...s.card,display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:140}}><label style={LS}>Período De</label><input style={IS} type="date" value={dreInicio} onChange={e=>setDreInicio(e.target.value)}/></div>
+              <div style={{flex:1,minWidth:140}}><label style={LS}>Período Até</label><input style={IS} type="date" value={dreFim} onChange={e=>setDreFim(e.target.value)}/></div>
+              <button style={s.btn()} onClick={loadDre}>Gerar DRE</button>
+            </div>
+            {dreData&&(
+              <div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+                  <div style={s.card}>
+                    <h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700,color:"#22c55e"}}>Receitas por mês</h3>
+                    <table><thead><tr><th style={s.th}>Mês</th><th style={s.th}>Total Recebido</th></tr></thead>
+                      <tbody>{dreData.receitas.map(r=><tr key={r.mes}>
+                        <td style={s.td}>{r.mes}</td>
+                        <td style={{...s.td,fontFamily:"monospace",color:"#22c55e"}}>{fmt(r.total)}</td>
+                      </tr>)}</tbody>
+                    </table>
+                  </div>
+                  <div style={s.card}>
+                    <h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700,color:"#f59e0b"}}>Despesas por tipo</h3>
+                    <table><thead><tr><th style={s.th}>Mês</th><th style={s.th}>Tipo</th><th style={s.th}>Total</th></tr></thead>
+                      <tbody>{dreData.despesas.map((d,i)=><tr key={i}>
+                        <td style={s.td}>{d.mes}</td><td style={s.td}>{d.tipo}</td>
+                        <td style={{...s.td,fontFamily:"monospace",color:"#f59e0b"}}>{fmt(d.total)}</td>
+                      </tr>)}</tbody>
+                    </table>
+                  </div>
+                </div>
+                <div style={s.card}>
+                  <h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700,color:"#06b6d4"}}>Previsão de Recebimentos (contratos ativos)</h3>
+                  <table><thead><tr><th style={s.th}>Imóvel</th><th style={s.th}>Locatário</th><th style={s.th}>Competência</th><th style={s.th}>Vencimento</th><th style={s.th}>Valor</th><th style={s.th}>Status</th></tr></thead>
+                    <tbody>{dreData.previsao.map(p=><tr key={p.id}>
+                      <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8"}}>{p.codigo}</span></td>
+                      <td style={s.td}>{p.locatario}</td>
+                      <td style={s.td}>{p.competencia}</td>
+                      <td style={s.td}>{fmtDate(p.vencimento)}</td>
+                      <td style={{...s.td,fontFamily:"monospace",color:"#06b6d4"}}>{fmt(p.valor)}</td>
+                      <td style={s.td}><Badge label={p.status}/></td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* RELATÓRIO */}
+        {tab==="relatorio"&&isInterno&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+              <h2 style={{fontWeight:800,fontSize:22,margin:0}}>Relatório Financeiro ao Locador</h2>
+              {relGerado&&dadosRelatorio?.length>0&&<button style={s.btn()} onClick={()=>{const w=window.open("","_blank");w.document.write(`<html><head><title>Relatório</title><style>body{font-family:sans-serif;padding:32px;color:#1a202c}table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}th{background:#f1f5f9;padding:7px 10px;text-align:left;font-size:11px}td{padding:7px 10px;border-bottom:1px solid #e2e8f0}</style></head><body>${printRef.current?.innerHTML||""}</body></html>`);w.document.close();setTimeout(()=>w.print(),400);}}>⎙ Imprimir</button>}
             </div>
             <div style={{...s.card,display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap"}}>
-              <div style={{flex:2,minWidth:160}}><label style={LS}>Locador *</label>
+              <div style={{flex:2,minWidth:160}}><label style={LS}>Locador</label>
                 <select style={IS} value={relLocador} onChange={e=>{setRelLocador(e.target.value);setRelGerado(false);}}>
                   <option value="">Selecione...</option>{locadoresUnicos.map(l=><option key={l}>{l}</option>)}
                 </select></div>
-              <div style={{flex:1,minWidth:130}}><label style={LS}>De</label><input style={IS} type="month" value={relMesInicio} onChange={e=>{setRelMesInicio(e.target.value);setRelGerado(false);}}/></div>
-              <div style={{flex:1,minWidth:130}}><label style={LS}>Até</label><input style={IS} type="month" value={relMesFim} onChange={e=>{setRelMesFim(e.target.value);setRelGerado(false);}}/></div>
+              <div style={{flex:1,minWidth:130}}><label style={LS}>De</label><input style={IS} type="month" value={relMesInicio} onChange={e=>setRelMesInicio(e.target.value)}/></div>
+              <div style={{flex:1,minWidth:130}}><label style={LS}>Até</label><input style={IS} type="month" value={relMesFim} onChange={e=>setRelMesFim(e.target.value)}/></div>
               <button style={{...s.btn(),opacity:relLocador?1:0.4}} disabled={!relLocador} onClick={()=>setRelGerado(true)}>Gerar</button>
             </div>
             {relGerado&&dadosRelatorio&&(
-              dadosRelatorio.length===0?<div style={{...s.card,textAlign:"center",color:"#64748b",padding:40}}>Nenhum dado encontrado.</div>:
               <div ref={printRef}>
                 <div style={{...s.card,borderLeft:"4px solid #6366f1"}}>
                   <div style={{fontSize:11,color:"#6366f1",fontWeight:700,letterSpacing:2,textTransform:"uppercase"}}>Relatório Financeiro ao Locador</div>
                   <div style={{fontSize:20,fontWeight:800,marginTop:4}}>{relLocador}</div>
-                  <div style={{fontSize:13,color:"#64748b",marginTop:2}}>{relMesInicio||relMesFim?`${relMesInicio||"início"} até ${relMesFim||"fim"}`:"Todos os registros"} · Emitido em {new Date().toLocaleDateString("pt-BR")}</div>
+                  <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{relMesInicio||relMesFim?`${relMesInicio||"início"} até ${relMesFim||"fim"}`:"Todos os registros"} · {new Date().toLocaleDateString("pt-BR")}</div>
                 </div>
-                {dadosRelatorio.map(({c,parcs,desps,reps,totalRec,totalDesp,totalRep})=>(
+                {dadosRelatorio.map(({c,desps,reps,totalDesp,totalRep})=>(
                   <div key={c.id} style={s.card}>
-                    <div style={{fontWeight:700,fontSize:15,marginBottom:4}}>{c.codigo} — {c.endereco}</div>
-                    <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>Locatário: {c.locatario} · Aluguel atual: {fmt(c.aluguelAtual)}</div>
-                    {[
-                      {label:"Parcelas",rows:parcs,cols:["Competência","Vencimento","Valor","Recebido","Status"],render:p=>[p.competencia,fmtDate(p.vencimento),fmt(p.valor),fmt(p.valorRecebido),<Badge label={p.status}/>]},
-                      {label:"Despesas",rows:desps,cols:["Data","Tipo","Descrição","Valor"],render:d=>[fmtDate(d.data),d.tipo,d.descricao,fmt(d.valor)]},
-                      {label:"Repasses",rows:reps,cols:["Competência","Recebido","Despesas","Taxa","Líquido","Pagamento"],render:r=>[r.competencia,fmt(r.valorRecebido),fmt(r.totalDespesas),fmt(r.taxaAdm),fmt(r.valorLiquido),r.formaPagamento]},
-                    ].map(sec=>(
-                      <div key={sec.label} style={{marginBottom:14}}>
-                        <div style={{fontSize:11,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{sec.label}</div>
-                        {sec.rows.length===0?<div style={{color:"#475569",fontSize:13}}>Nenhum registro</div>:
-                        <table><thead><tr>{sec.cols.map(col=><th key={col} style={s.th}>{col}</th>)}</tr></thead>
-                          <tbody>{sec.rows.map((row,i)=><tr key={i}>{sec.render(row).map((cell,j)=><td key={j} style={s.td}>{cell}</td>)}</tr>)}</tbody>
-                        </table>}
-                      </div>
-                    ))}
-                    <div style={{background:"#0f1623",borderRadius:8,padding:14,border:"1px solid #2d3748",display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-                      {[["Total recebido",fmt(totalRec),"#22c55e"],["Total despesas",fmt(totalDesp),"#f59e0b"],["Total repassado",fmt(totalRep),"#818cf8"]].map(([k,v,c])=>(
-                        <div key={k}><div style={{fontSize:11,color:"#64748b"}}>{k}</div><div style={{fontFamily:"monospace",color:c,fontWeight:700,fontSize:15}}>{v}</div></div>
-                      ))}
+                    <div style={{fontWeight:700,marginBottom:4}}>{c.codigo} — {c.endereco}</div>
+                    <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Locatário: {c.locatarioNomeFull||c.locatario} · Aluguel atual: {fmt(c.aluguelAtual)}</div>
+                    {desps.length>0&&<><div style={{fontSize:11,fontWeight:700,color:"#f59e0b",textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Despesas</div>
+                    <table><thead><tr><th style={s.th}>Data</th><th style={s.th}>Tipo</th><th style={s.th}>Descrição</th><th style={s.th}>Valor</th></tr></thead>
+                      <tbody>{desps.map(d=><tr key={d.id}><td style={s.td}>{fmtDate(d.data)}</td><td style={s.td}>{d.tipo}</td><td style={s.td}>{d.descricao}</td><td style={{...s.td,fontFamily:"monospace"}}>{fmt(d.valor)}</td></tr>)}</tbody>
+                    </table></>}
+                    {reps.length>0&&<><div style={{fontSize:11,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:1,margin:"12px 0 6px"}}>Repasses</div>
+                    <table><thead><tr><th style={s.th}>Competência</th><th style={s.th}>Recebido</th><th style={s.th}>Despesas</th><th style={s.th}>Taxa</th><th style={s.th}>Líquido</th><th style={s.th}>Pagamento</th></tr></thead>
+                      <tbody>{reps.map(r=><tr key={r.id}><td style={s.td}>{r.competencia}</td><td style={{...s.td,fontFamily:"monospace"}}>{fmt(r.valorRecebido)}</td><td style={{...s.td,fontFamily:"monospace"}}>{fmt(r.totalDespesas)}</td><td style={{...s.td,fontFamily:"monospace"}}>{fmt(r.taxaAdm)}</td><td style={{...s.td,fontFamily:"monospace",fontWeight:700,color:"#22c55e"}}>{fmt(r.valorLiquido)}</td><td style={s.td}>{r.formaPagamento}</td></tr>)}</tbody>
+                    </table></>}
+                    <div style={{background:"#0f1623",borderRadius:8,padding:12,marginTop:8,display:"flex",gap:24}}>
+                      <div><div style={{fontSize:11,color:"#64748b"}}>Total despesas</div><div style={{fontFamily:"monospace",color:"#f59e0b",fontWeight:700}}>{fmt(totalDesp)}</div></div>
+                      <div><div style={{fontSize:11,color:"#64748b"}}>Total repassado</div><div style={{fontFamily:"monospace",color:"#22c55e",fontWeight:700,fontSize:16}}>{fmt(totalRep)}</div></div>
                     </div>
                   </div>
                 ))}
@@ -583,33 +753,32 @@ export default function App(){
         {/* USUÁRIOS */}
         {tab==="usuarios"&&isAdmin&&(
           <div>
-            <h2 style={{fontWeight:800,fontSize:24,marginBottom:20}}>Usuários</h2>
+            <h2 style={{fontWeight:800,fontSize:22,marginBottom:16}}>Usuários</h2>
             {usuarios.filter(u=>!u.aprovado).length>0&&(
               <div style={{background:"#f59e0b15",border:"1px solid #f59e0b40",borderRadius:14,padding:16,marginBottom:16}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#f59e0b",marginBottom:12}}>⏳ Aguardando aprovação ({usuarios.filter(u=>!u.aprovado).length})</div>
+                <div style={{fontSize:13,fontWeight:700,color:"#f59e0b",marginBottom:10}}>⏳ Aguardando aprovação ({usuarios.filter(u=>!u.aprovado).length})</div>
                 {usuarios.filter(u=>!u.aprovado).map(u=>(
-                  <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #1e2940"}}>
-                    <div><div style={{fontSize:14,fontWeight:600}}>{u.nome}</div><div style={{fontSize:12,color:"#64748b"}}>{u.email}</div></div>
+                  <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1e2940"}}>
+                    <div><div style={{fontSize:14,fontWeight:600}}>{u.nome}</div><div style={{fontSize:12,color:"#64748b"}}>{u.email} · {u.tipoAcesso}</div></div>
                     <div style={{display:"flex",gap:8}}>
                       <button style={s.btn("#22c55e")} onClick={async()=>{const up=await api.updateUsuario(u.id,{nome:u.nome,role:u.role,ativo:true,aprovado:true});setUsuarios(p=>p.map(x=>x.id===u.id?up:x));showToast("Aprovado!");}}>✓ Aprovar</button>
-                      <button style={s.btn("#ef4444")} onClick={async()=>{if(!confirm("Rejeitar?"))return;await api.deleteUsuario(u.id);setUsuarios(p=>p.filter(x=>x.id!==u.id));showToast("Rejeitado");}}>✕ Rejeitar</button>
+                      <button style={s.btn("#ef4444")} onClick={async()=>{if(!confirm("Rejeitar?"))return;await api.deleteUsuario(u.id);setUsuarios(p=>p.filter(x=>x.id!==u.id));showToast("Rejeitado");}}>✕</button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
             <div style={s.card}>
-              <table><thead><tr><th style={s.th}>Nome</th><th style={s.th}>Email</th><th style={s.th}>Perfil</th><th style={s.th}>Status</th><th style={s.th}></th></tr></thead>
+              <table><thead><tr><th style={s.th}>Nome</th><th style={s.th}>Email</th><th style={s.th}>Tipo</th><th style={s.th}>Perfil</th><th style={s.th}>Status</th><th style={s.th}></th></tr></thead>
                 <tbody>{usuarios.filter(u=>u.aprovado).map(u=>(
                   <tr key={u.id}>
                     <td style={s.td}>{u.nome}</td><td style={{...s.td,color:"#64748b"}}>{u.email}</td>
+                    <td style={s.td}><span style={{fontSize:12,color:"#94a3b8"}}>{u.tipoAcesso}</span></td>
                     <td style={s.td}><span style={{background:u.role==="admin"?"#6366f120":"#1e2940",color:u.role==="admin"?"#818cf8":"#64748b",border:`1px solid ${u.role==="admin"?"#6366f140":"#2d3748"}`,padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{u.role==="admin"?"Admin":"Usuário"}</span></td>
                     <td style={s.td}><Badge label={u.ativo?"Ativo":"Inativo"}/></td>
                     <td style={s.td}>{u.id!==user.id&&<div style={{display:"flex",gap:6}}>
-                      <button style={s.btnGhost} onClick={async()=>{const up=await api.updateUsuario(u.id,{nome:u.nome,role:u.role==="admin"?"usuario":"admin",ativo:u.ativo,aprovado:u.aprovado});setUsuarios(p=>p.map(x=>x.id===u.id?up:x));}}>
-                        {u.role==="admin"?"→ Usuário":"→ Admin"}
-                      </button>
-                      <button style={s.btnGhost} onClick={async()=>{const up=await api.updateUsuario(u.id,{nome:u.nome,role:u.role,ativo:!u.ativo,aprovado:u.aprovado});setUsuarios(p=>p.map(x=>x.id===u.id?up:x));}}>{u.ativo?"Desativar":"Ativar"}</button>
+                      <button style={s.btnG} onClick={async()=>{const up=await api.updateUsuario(u.id,{nome:u.nome,role:u.role==="admin"?"usuario":"admin",ativo:u.ativo,aprovado:u.aprovado});setUsuarios(p=>p.map(x=>x.id===u.id?up:x));}}>{u.role==="admin"?"→ Usuário":"→ Admin"}</button>
+                      <button style={s.btnG} onClick={async()=>{const up=await api.updateUsuario(u.id,{nome:u.nome,role:u.role,ativo:!u.ativo,aprovado:u.aprovado});setUsuarios(p=>p.map(x=>x.id===u.id?up:x));}}>{u.ativo?"Desativar":"Ativar"}</button>
                     </div>}</td>
                   </tr>
                 ))}</tbody>
@@ -619,34 +788,89 @@ export default function App(){
         )}
       </div>
 
-      {/* MODAL PROPRIETÁRIO */}
-      {modalProprietario&&(
-        <Modal title={modalProprietario==="new"?"Novo Proprietário":"Editar Proprietário"} onClose={()=>setModalProprietario(null)} wide>
+      {/* ── MODAIS ── */}
+
+      {/* MODAL LOCADOR */}
+      {modalLocador&&(
+        <Modal title={modalLocador==="new"?"Novo Locador":"Editar Locador"} onClose={()=>setModalLocador(null)} wide>
           <ST>Dados Pessoais</ST>
           <R>
-            <F label="Nome completo *" h><input style={IS} value={formProprietario.nome} onChange={e=>setFormProprietario(p=>({...p,nome:e.target.value}))}/></F>
-            <F label="CPF / CNPJ" h><input style={IS} value={formProprietario.cpfCnpj||""} onChange={e=>setFormProprietario(p=>({...p,cpfCnpj:e.target.value}))}/></F>
-            <F label="Telefone" h><input style={IS} value={formProprietario.telefone||""} onChange={e=>setFormProprietario(p=>({...p,telefone:e.target.value}))}/></F>
-            <F label="Email" h><input style={IS} type="email" value={formProprietario.email||""} onChange={e=>setFormProprietario(p=>({...p,email:e.target.value}))}/></F>
+            <F label="Nome completo *" h><input style={IS} value={formLocador.nome} onChange={e=>setFormLocador(p=>({...p,nome:e.target.value}))}/></F>
+            <F label="CPF / CNPJ" h><input style={IS} value={formLocador.cpfCnpj||""} onChange={e=>setFormLocador(p=>({...p,cpfCnpj:e.target.value}))}/></F>
+            <F label="Nacionalidade" h><input style={IS} value={formLocador.nacionalidade||""} onChange={e=>setFormLocador(p=>({...p,nacionalidade:e.target.value}))}/></F>
+            <F label="Estado Civil" h><select style={IS} value={formLocador.estadoCivil||""} onChange={e=>setFormLocador(p=>({...p,estadoCivil:e.target.value}))}><option value="">Selecione</option>{["Solteiro(a)","Casado(a)","Divorciado(a)","Viúvo(a)","União Estável"].map(o=><option key={o}>{o}</option>)}</select></F>
+            <F label="Profissão" h><input style={IS} value={formLocador.profissao||""} onChange={e=>setFormLocador(p=>({...p,profissao:e.target.value}))}/></F>
+            <F label="RG" h><input style={IS} value={formLocador.rg||""} onChange={e=>setFormLocador(p=>({...p,rg:e.target.value}))}/></F>
+            <F label="Órgão Emissor" h><input style={IS} value={formLocador.rgOrgao||""} onChange={e=>setFormLocador(p=>({...p,rgOrgao:e.target.value}))}/></F>
+            <F label="Telefone" h><input style={IS} value={formLocador.telefone||""} onChange={e=>setFormLocador(p=>({...p,telefone:e.target.value}))}/></F>
+            <F label="Email" h><input style={IS} type="email" value={formLocador.email||""} onChange={e=>setFormLocador(p=>({...p,email:e.target.value}))}/></F>
           </R>
-          <ST>Dados Bancários (para repasse)</ST>
+          <ST>Endereço</ST>
+          <F label="Endereço completo"><input style={IS} value={formLocador.endereco||""} onChange={e=>setFormLocador(p=>({...p,endereco:e.target.value}))}/></F>
           <R>
-            <F label="Banco" h><input style={IS} value={formProprietario.banco||""} onChange={e=>setFormProprietario(p=>({...p,banco:e.target.value}))}/></F>
-            <F label="Agência" h><input style={IS} value={formProprietario.agencia||""} onChange={e=>setFormProprietario(p=>({...p,agencia:e.target.value}))}/></F>
-            <F label="Conta" h><input style={IS} value={formProprietario.conta||""} onChange={e=>setFormProprietario(p=>({...p,conta:e.target.value}))}/></F>
-            <F label="Tipo de Conta" h><select style={IS} value={formProprietario.tipoConta||"Corrente"} onChange={e=>setFormProprietario(p=>({...p,tipoConta:e.target.value}))}>{["Corrente","Poupança"].map(o=><option key={o}>{o}</option>)}</select></F>
-            <F label="PIX" h><input style={IS} value={formProprietario.pix||""} onChange={e=>setFormProprietario(p=>({...p,pix:e.target.value}))} placeholder="CPF, email, telefone ou chave"/></F>
+            <F label="Bairro" h><input style={IS} value={formLocador.bairro||""} onChange={e=>setFormLocador(p=>({...p,bairro:e.target.value}))}/></F>
+            <F label="Cidade" h><input style={IS} value={formLocador.cidade||""} onChange={e=>setFormLocador(p=>({...p,cidade:e.target.value}))}/></F>
+            <F label="Estado" h><input style={IS} value={formLocador.estado||""} onChange={e=>setFormLocador(p=>({...p,estado:e.target.value}))}/></F>
+            <F label="CEP" h><input style={IS} value={formLocador.cep||""} onChange={e=>setFormLocador(p=>({...p,cep:e.target.value}))}/></F>
           </R>
+          <ST>Procurador (se houver)</ST>
+          <R>
+            <F label="Nome do Procurador" h><input style={IS} value={formLocador.procuradorNome||""} onChange={e=>setFormLocador(p=>({...p,procuradorNome:e.target.value}))}/></F>
+            <F label="CPF do Procurador" h><input style={IS} value={formLocador.procuradorCpf||""} onChange={e=>setFormLocador(p=>({...p,procuradorCpf:e.target.value}))}/></F>
+            <F label="RG do Procurador" h><input style={IS} value={formLocador.procuradorRg||""} onChange={e=>setFormLocador(p=>({...p,procuradorRg:e.target.value}))}/></F>
+            <F label="Endereço do Procurador" h><input style={IS} value={formLocador.procuradorEndereco||""} onChange={e=>setFormLocador(p=>({...p,procuradorEndereco:e.target.value}))}/></F>
+          </R>
+          <ST>Dados Bancários</ST>
+          <R>
+            <F label="Banco" h><input style={IS} value={formLocador.banco||""} onChange={e=>setFormLocador(p=>({...p,banco:e.target.value}))}/></F>
+            <F label="Agência" h><input style={IS} value={formLocador.agencia||""} onChange={e=>setFormLocador(p=>({...p,agencia:e.target.value}))}/></F>
+            <F label="Conta" h><input style={IS} value={formLocador.conta||""} onChange={e=>setFormLocador(p=>({...p,conta:e.target.value}))}/></F>
+            <F label="Tipo" h><select style={IS} value={formLocador.tipoConta||"Corrente"} onChange={e=>setFormLocador(p=>({...p,tipoConta:e.target.value}))}>{["Corrente","Poupança"].map(o=><option key={o}>{o}</option>)}</select></F>
+            <F label="PIX" h><input style={IS} value={formLocador.pix||""} onChange={e=>setFormLocador(p=>({...p,pix:e.target.value}))}/></F>
+          </R>
+          <F label="Observações"><textarea style={{...IS,minHeight:60}} value={formLocador.obs||""} onChange={e=>setFormLocador(p=>({...p,obs:e.target.value}))}/></F>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:12}}>
-            <button style={s.btnGhost} onClick={()=>setModalProprietario(null)}>Cancelar</button>
-            <button style={s.btn()} onClick={async()=>{
-              if(!formProprietario.nome) return showToast("Preencha o nome","error");
-              try{
-                if(modalProprietario==="new"){const n=await api.createProprietario(formProprietario);setProprietarios(p=>[...p,n]);showToast("Proprietário cadastrado!");}
-                else{const n=await api.updateProprietario(modalProprietario,formProprietario);setProprietarios(p=>p.map(x=>x.id===modalProprietario?n:x));showToast("Atualizado!");}
-                setModalProprietario(null);
-              }catch(e){showToast(e.message,"error");}
-            }}>Salvar</button>
+            <button style={s.btnG} onClick={()=>setModalLocador(null)}>Cancelar</button>
+            <button style={s.btn()} onClick={saveLocador}>Salvar</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* MODAL LOCATÁRIO */}
+      {modalLocatario&&(
+        <Modal title={modalLocatario==="new"?"Novo Locatário":"Editar Locatário"} onClose={()=>setModalLocatario(null)} wide>
+          <ST>Dados Pessoais</ST>
+          <R>
+            <F label="Nome completo *" h><input style={IS} value={formLocatario.nome} onChange={e=>setFormLocatario(p=>({...p,nome:e.target.value}))}/></F>
+            <F label="CPF" h><input style={IS} value={formLocatario.cpf||""} onChange={e=>setFormLocatario(p=>({...p,cpf:e.target.value}))}/></F>
+            <F label="Nacionalidade" h><input style={IS} value={formLocatario.nacionalidade||""} onChange={e=>setFormLocatario(p=>({...p,nacionalidade:e.target.value}))}/></F>
+            <F label="Estado Civil" h><select style={IS} value={formLocatario.estadoCivil||""} onChange={e=>setFormLocatario(p=>({...p,estadoCivil:e.target.value}))}><option value="">Selecione</option>{["Solteiro(a)","Casado(a)","Divorciado(a)","Viúvo(a)","União Estável"].map(o=><option key={o}>{o}</option>)}</select></F>
+            <F label="Profissão" h><input style={IS} value={formLocatario.profissao||""} onChange={e=>setFormLocatario(p=>({...p,profissao:e.target.value}))}/></F>
+            <F label="RG" h><input style={IS} value={formLocatario.rg||""} onChange={e=>setFormLocatario(p=>({...p,rg:e.target.value}))}/></F>
+            <F label="Órgão Emissor" h><input style={IS} value={formLocatario.rgOrgao||""} onChange={e=>setFormLocatario(p=>({...p,rgOrgao:e.target.value}))}/></F>
+            <F label="CNH" h><input style={IS} value={formLocatario.cnh||""} onChange={e=>setFormLocatario(p=>({...p,cnh:e.target.value}))}/></F>
+            <F label="Telefone" h><input style={IS} value={formLocatario.telefone||""} onChange={e=>setFormLocatario(p=>({...p,telefone:e.target.value}))}/></F>
+            <F label="Email" h><input style={IS} type="email" value={formLocatario.email||""} onChange={e=>setFormLocatario(p=>({...p,email:e.target.value}))}/></F>
+            <F label="Renda (R$)" h><input style={IS} type="number" value={formLocatario.renda||""} onChange={e=>setFormLocatario(p=>({...p,renda:e.target.value}))}/></F>
+          </R>
+          <ST>Endereço</ST>
+          <F label="Endereço completo"><input style={IS} value={formLocatario.endereco||""} onChange={e=>setFormLocatario(p=>({...p,endereco:e.target.value}))}/></F>
+          <R>
+            <F label="Bairro" h><input style={IS} value={formLocatario.bairro||""} onChange={e=>setFormLocatario(p=>({...p,bairro:e.target.value}))}/></F>
+            <F label="Cidade" h><input style={IS} value={formLocatario.cidade||""} onChange={e=>setFormLocatario(p=>({...p,cidade:e.target.value}))}/></F>
+            <F label="Estado" h><input style={IS} value={formLocatario.estado||""} onChange={e=>setFormLocatario(p=>({...p,estado:e.target.value}))}/></F>
+            <F label="CEP" h><input style={IS} value={formLocatario.cep||""} onChange={e=>setFormLocatario(p=>({...p,cep:e.target.value}))}/></F>
+          </R>
+          <ST>Fiador (se houver)</ST>
+          <R>
+            <F label="Nome do Fiador" h><input style={IS} value={formLocatario.fiadorNome||""} onChange={e=>setFormLocatario(p=>({...p,fiadorNome:e.target.value}))}/></F>
+            <F label="CPF do Fiador" h><input style={IS} value={formLocatario.fiadorCpf||""} onChange={e=>setFormLocatario(p=>({...p,fiadorCpf:e.target.value}))}/></F>
+            <F label="Tel. Fiador" h><input style={IS} value={formLocatario.fiadorTelefone||""} onChange={e=>setFormLocatario(p=>({...p,fiadorTelefone:e.target.value}))}/></F>
+          </R>
+          <F label="Observações"><textarea style={{...IS,minHeight:60}} value={formLocatario.obs||""} onChange={e=>setFormLocatario(p=>({...p,obs:e.target.value}))}/></F>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:12}}>
+            <button style={s.btnG} onClick={()=>setModalLocatario(null)}>Cancelar</button>
+            <button style={s.btn()} onClick={saveLocatario}>Salvar</button>
           </div>
         </Modal>
       )}
@@ -654,43 +878,39 @@ export default function App(){
       {/* MODAL IMÓVEL */}
       {modalImovel&&(
         <Modal title={modalImovel==="new"?"Novo Imóvel":"Editar Imóvel"} onClose={()=>setModalImovel(null)} wide>
-          <ST>Proprietário</ST>
-          <F label="Proprietário do imóvel">
-            <select style={IS} value={formImovel.proprietarioId||""} onChange={e=>setFormImovel(p=>({...p,proprietarioId:e.target.value}))}>
-              <option value="">Selecione...</option>
-              {proprietarios.map(p=><option key={p.id} value={p.id}>{p.nome} {p.cpfCnpj?`— ${p.cpfCnpj}`:""}</option>)}
-            </select>
-          </F>
-
+          <ST>Locador do Imóvel</ST>
+          <F label="Locador"><select style={IS} value={formImovel.locadorId||""} onChange={e=>setFormImovel(p=>({...p,locadorId:e.target.value}))}><option value="">Selecione...</option>{locadores.map(l=><option key={l.id} value={l.id}>{l.nome}</option>)}</select></F>
           <ST>Identificação</ST>
-          <R><F label="Código *" h><input style={IS} value={formImovel.codigo} onChange={e=>setFormImovel(p=>({...p,codigo:e.target.value}))} placeholder="AP-001"/></F>
-          <F label="Tipo" h><select style={IS} value={formImovel.tipo} onChange={e=>setFormImovel(p=>({...p,tipo:e.target.value}))}>{["Apartamento","Casa","Comercial","Sala","Galpão","Terreno"].map(t=><option key={t}>{t}</option>)}</select></F></R>
+          <R>
+            <F label="Código *" h><input style={IS} value={formImovel.codigo} onChange={e=>setFormImovel(p=>({...p,codigo:e.target.value}))} placeholder="AP-001"/></F>
+            <F label="Tipo" h><select style={IS} value={formImovel.tipo} onChange={e=>setFormImovel(p=>({...p,tipo:e.target.value}))}>{["Apartamento","Casa","Comercial","Sala","Galpão","Terreno"].map(t=><option key={t}>{t}</option>)}</select></F>
+          </R>
           <F label="Endereço *"><input style={IS} value={formImovel.endereco} onChange={e=>setFormImovel(p=>({...p,endereco:e.target.value}))}/></F>
           <R>
-            <F label="Bairro" h><input style={IS} value={formImovel.bairro} onChange={e=>setFormImovel(p=>({...p,bairro:e.target.value}))}/></F>
-            <F label="Área (m²)" h><input style={IS} type="number" value={formImovel.area} onChange={e=>setFormImovel(p=>({...p,area:e.target.value}))}/></F>
+            <F label="Bairro" h><input style={IS} value={formImovel.bairro||""} onChange={e=>setFormImovel(p=>({...p,bairro:e.target.value}))}/></F>
+            <F label="Cidade" h><input style={IS} value={formImovel.cidade||""} onChange={e=>setFormImovel(p=>({...p,cidade:e.target.value}))}/></F>
+            <F label="Estado" h><input style={IS} value={formImovel.estado||""} onChange={e=>setFormImovel(p=>({...p,estado:e.target.value}))}/></F>
+            <F label="CEP" h><input style={IS} value={formImovel.cep||""} onChange={e=>setFormImovel(p=>({...p,cep:e.target.value}))}/></F>
+            <F label="Área (m²)" h><input style={IS} type="number" value={formImovel.area||""} onChange={e=>setFormImovel(p=>({...p,area:e.target.value}))}/></F>
           </R>
-
-          <ST>Detalhes do Imóvel</ST>
+          <ST>Detalhes</ST>
           <R>
             <F label="Nome do Condomínio" h><input style={IS} value={formImovel.nomeCondominio||""} onChange={e=>setFormImovel(p=>({...p,nomeCondominio:e.target.value}))}/></F>
             <F label="Bloco/Torre" h><input style={IS} value={formImovel.bloco||""} onChange={e=>setFormImovel(p=>({...p,bloco:e.target.value}))}/></F>
-            <F label="Apartamento/Unidade" h><input style={IS} value={formImovel.apartamento||""} onChange={e=>setFormImovel(p=>({...p,apartamento:e.target.value}))}/></F>
-            <F label="Quartos" h><input style={IS} type="number" min="0" value={formImovel.quartos||""} onChange={e=>setFormImovel(p=>({...p,quartos:e.target.value}))}/></F>
+            <F label="Apto/Unidade" h><input style={IS} value={formImovel.apartamento||""} onChange={e=>setFormImovel(p=>({...p,apartamento:e.target.value}))}/></F>
+            <F label="Quartos" h><input style={IS} type="number" value={formImovel.quartos||""} onChange={e=>setFormImovel(p=>({...p,quartos:e.target.value}))}/></F>
             <F label="Mobiliado" h><select style={IS} value={formImovel.mobiliado||"Sem móveis"} onChange={e=>setFormImovel(p=>({...p,mobiliado:e.target.value}))}>{["Mobiliado","Semi-mobiliado","Sem móveis"].map(o=><option key={o}>{o}</option>)}</select></F>
-            <F label="Valor Ideal de Aluguel (R$)" h><input style={IS} type="number" value={formImovel.valorIdeal||""} onChange={e=>setFormImovel(p=>({...p,valorIdeal:e.target.value}))}/></F>
+            <F label="Valor Ideal (R$)" h><input style={IS} type="number" value={formImovel.valorIdeal||""} onChange={e=>setFormImovel(p=>({...p,valorIdeal:e.target.value}))}/></F>
           </R>
-
-          <ST>Contatos</ST>
+          <ST>Contatos do Condomínio</ST>
           <R>
             <F label="Tel. Portaria" h><input style={IS} value={formImovel.telPortaria||""} onChange={e=>setFormImovel(p=>({...p,telPortaria:e.target.value}))}/></F>
             <F label="Tel. Síndico" h><input style={IS} value={formImovel.telSindico||""} onChange={e=>setFormImovel(p=>({...p,telSindico:e.target.value}))}/></F>
             <F label="Tel. Contabilidade" h><input style={IS} value={formImovel.telContabilidade||""} onChange={e=>setFormImovel(p=>({...p,telContabilidade:e.target.value}))}/></F>
             <F label="Tel. Cobrança" h><input style={IS} value={formImovel.telCobranca||""} onChange={e=>setFormImovel(p=>({...p,telCobranca:e.target.value}))}/></F>
           </R>
-
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:12}}>
-            <button style={s.btnGhost} onClick={()=>setModalImovel(null)}>Cancelar</button>
+            <button style={s.btnG} onClick={()=>setModalImovel(null)}>Cancelar</button>
             <button style={s.btn()} onClick={saveImovel}>Salvar</button>
           </div>
         </Modal>
@@ -700,66 +920,52 @@ export default function App(){
       {modalContrato&&(
         <Modal title={modalContrato==="new"?"Novo Contrato":"Editar Contrato"} onClose={()=>setModalContrato(null)} wide>
           <ST>Imóvel</ST>
-          <F label="Imóvel *"><select style={IS} value={formContrato.imovelId} onChange={e=>setFormContrato(p=>({...p,imovelId:e.target.value}))}>
-            <option value="">Selecione...</option>{imoveis.map(im=><option key={im.id} value={im.id}>{im.codigo} — {im.endereco}</option>)}
-          </select></F>
-
+          <F label="Imóvel *"><select style={IS} value={formContrato.imovelId} onChange={e=>setFormContrato(p=>({...p,imovelId:e.target.value}))}><option value="">Selecione...</option>{imoveis.map(im=><option key={im.id} value={im.id}>{im.codigo} — {im.endereco}</option>)}</select></F>
           <ST>Partes</ST>
           <R>
-            <F label="Locatário *" h><input style={IS} value={formContrato.locatario} onChange={e=>setFormContrato(p=>({...p,locatario:e.target.value}))}/></F>
-            <F label="Tel. Locatário" h><input style={IS} value={formContrato.telefoneLocatario} onChange={e=>setFormContrato(p=>({...p,telefoneLocatario:e.target.value}))}/></F>
-            <F label="Locador *" h><input style={IS} value={formContrato.locador} onChange={e=>setFormContrato(p=>({...p,locador:e.target.value}))}/></F>
-            <F label="Tel. Locador" h><input style={IS} value={formContrato.telefoneLocador} onChange={e=>setFormContrato(p=>({...p,telefoneLocador:e.target.value}))}/></F>
+            <F label="Locatário (cadastro)" h><select style={IS} value={formContrato.locatarioId||""} onChange={e=>{const l=locatarios.find(x=>x.id===+e.target.value);setFormContrato(p=>({...p,locatarioId:e.target.value,locatario:l?.nome||p.locatario,telefoneLocatario:l?.telefone||p.telefoneLocatario}));}}><option value="">Selecione...</option>{locatarios.map(l=><option key={l.id} value={l.id}>{l.nome}</option>)}</select></F>
+            <F label="Locador (cadastro)" h><select style={IS} value={formContrato.locadorId||""} onChange={e=>{const l=locadores.find(x=>x.id===+e.target.value);setFormContrato(p=>({...p,locadorId:e.target.value,locador:l?.nome||p.locador,telefoneLocador:l?.telefone||p.telefoneLocador}));}}><option value="">Selecione...</option>{locadores.map(l=><option key={l.id} value={l.id}>{l.nome}</option>)}</select></F>
+            <F label="Nome Locatário" h><input style={IS} value={formContrato.locatario||""} onChange={e=>setFormContrato(p=>({...p,locatario:e.target.value}))}/></F>
+            <F label="Tel. Locatário" h><input style={IS} value={formContrato.telefoneLocatario||""} onChange={e=>setFormContrato(p=>({...p,telefoneLocatario:e.target.value}))}/></F>
+            <F label="Nome Locador" h><input style={IS} value={formContrato.locador||""} onChange={e=>setFormContrato(p=>({...p,locador:e.target.value}))}/></F>
+            <F label="Tel. Locador" h><input style={IS} value={formContrato.telefoneLocador||""} onChange={e=>setFormContrato(p=>({...p,telefoneLocador:e.target.value}))}/></F>
           </R>
-
-          <ST>Valores e Responsabilidades</ST>
+          <ST>Valores</ST>
           <R>
-            <PF label="Aluguel Inicial (R$) *" vk="aluguelInicial" pk="aluguelPagaPor" form={formContrato} set={setFormContrato}/>
+            <PF label="Aluguel (R$) *" vk="aluguelInicial" pk="aluguelPagaPor" form={formContrato} set={setFormContrato}/>
             <PF label="Condomínio (R$)" vk="condominio" pk="condominioPagaPor" form={formContrato} set={setFormContrato}/>
             <PF label="IPTU (R$)" vk="iptu" pk="iptuPagaPor" form={formContrato} set={setFormContrato}/>
-          </R>
-          <R>
+            <F label="Caução (R$)" h><input style={IS} type="number" value={formContrato.caucao||""} onChange={e=>setFormContrato(p=>({...p,caucao:e.target.value}))}/></F>
             <F label="Taxa Adm (%)" h>
               <input style={IS} type="number" value={formContrato.taxaAdmPct} onChange={e=>setFormContrato(p=>({...p,taxaAdmPct:e.target.value}))}/>
-              {formContrato.aluguelInicial&&<div style={{fontSize:11,color:"#6366f1",marginTop:3}}>= {fmt((+formContrato.aluguelInicial*+formContrato.taxaAdmPct)/100)} / mês</div>}
+              {formContrato.aluguelInicial&&<div style={{fontSize:11,color:"#6366f1",marginTop:3}}>= {fmt((+formContrato.aluguelInicial*+formContrato.taxaAdmPct)/100)}/mês</div>}
             </F>
-            <F label="Dia Vencimento" h><input style={IS} type="number" min="1" max="31" value={formContrato.vencimento} onChange={e=>setFormContrato(p=>({...p,vencimento:e.target.value}))}/></F>
-            <F label="Forma de Pagamento" h><select style={IS} value={formContrato.formaPagamento} onChange={e=>setFormContrato(p=>({...p,formaPagamento:e.target.value}))}>{fpOpts.map(o=><option key={o}>{o}</option>)}</select></F>
+            <F label="Dia Vencimento" h><input style={IS} type="number" min="1" max="31" value={formContrato.vencimento||""} onChange={e=>setFormContrato(p=>({...p,vencimento:e.target.value}))}/></F>
+            <F label="Forma Pagamento" h><select style={IS} value={formContrato.formaPagamento} onChange={e=>setFormContrato(p=>({...p,formaPagamento:e.target.value}))}>{fpOpts.map(o=><option key={o}>{o}</option>)}</select></F>
+            <F label="Índice Reajuste" h><select style={IS} value={formContrato.indiceReajuste||"IGPM"} onChange={e=>setFormContrato(p=>({...p,indiceReajuste:e.target.value}))}>{indiceOpts.map(o=><option key={o}>{o}</option>)}</select></F>
           </R>
-
-          <ST>Prazo do Contrato</ST>
+          <ST>Prazo</ST>
           <R>
-            <F label="Início *" h><input style={IS} type="date" value={formContrato.inicio} onChange={e=>setFormContrato(p=>({...p,inicio:e.target.value}))}/></F>
-            <F label="Duração (meses) *" h><input style={IS} type="number" value={formContrato.duracaoMeses} onChange={e=>setFormContrato(p=>({...p,duracaoMeses:e.target.value}))} placeholder="Ex: 30"/></F>
+            <F label="Início *" h><input style={IS} type="date" value={formContrato.inicio||""} onChange={e=>setFormContrato(p=>({...p,inicio:e.target.value}))}/></F>
+            <F label="Duração (meses)" h><input style={IS} type="number" value={formContrato.duracaoMeses||""} onChange={e=>setFormContrato(p=>({...p,duracaoMeses:e.target.value}))}/></F>
             {formContrato.inicio&&formContrato.duracaoMeses&&(
-              <F label="Término previsto" h>
-                <input style={{...IS,color:"#94a3b8"}} readOnly value={(() => {const d=new Date(formContrato.inicio);d.setMonth(d.getMonth()+ +formContrato.duracaoMeses);return d.toLocaleDateString("pt-BR");})()}/>
-              </F>
+              <F label="Término" h><input style={{...IS,color:"#94a3b8"}} readOnly value={(() => { const d=new Date(formContrato.inicio); d.setMonth(d.getMonth()+ +formContrato.duracaoMeses); return d.toLocaleDateString("pt-BR"); })()}/></F>
             )}
             <F label="Status" h><select style={IS} value={formContrato.status} onChange={e=>setFormContrato(p=>({...p,status:e.target.value}))}>{["Ativo","Encerrado","Inativo"].map(t=><option key={t}>{t}</option>)}</select></F>
           </R>
-
-          <ST>Penalidades e Honorários</ST>
+          <ST>Penalidades</ST>
           <R>
-            <F label="Multa rescisão (3 alu. prop.)" h>
-              <input style={{...IS,color:"#94a3b8"}} readOnly value={fmt(calcMulRescisao({...formContrato,aluguelAtual:formContrato.aluguelInicial}))}/>
-              <div style={{fontSize:11,color:"#475569",marginTop:3}}>Calculada automaticamente</div>
-            </F>
-            <F label="Multa atraso (%)" h><input style={IS} type="number" value={formContrato.multaAtrasoPct} onChange={e=>setFormContrato(p=>({...p,multaAtrasoPct:e.target.value}))}/></F>
-            <F label="Juros atraso (% a.m.)" h><input style={IS} type="number" value={formContrato.jurosAtrasoPct} onChange={e=>setFormContrato(p=>({...p,jurosAtrasoPct:e.target.value}))}/></F>
-            <F label="Honorários cobrança (%)" h><input style={IS} type="number" value={formContrato.honorariosPct} onChange={e=>setFormContrato(p=>({...p,honorariosPct:e.target.value}))}/></F>
-            <F label="Após quantos dias" h><input style={IS} type="number" value={formContrato.honorariosDias} onChange={e=>setFormContrato(p=>({...p,honorariosDias:e.target.value}))}/></F>
-            <F label="Honorários advogado (%)" h><input style={IS} type="number" value={formContrato.honorariosAdvPct} onChange={e=>setFormContrato(p=>({...p,honorariosAdvPct:e.target.value}))}/></F>
-            <F label="Após quantos dias" h><input style={IS} type="number" value={formContrato.honorariosAdvDias} onChange={e=>setFormContrato(p=>({...p,honorariosAdvDias:e.target.value}))}/></F>
+            <F label="Multa atraso (%)" h><input style={IS} type="number" value={formContrato.multaAtrasoPct||""} onChange={e=>setFormContrato(p=>({...p,multaAtrasoPct:e.target.value}))}/></F>
+            <F label="Juros atraso (% a.m.)" h><input style={IS} type="number" value={formContrato.jurosAtrasoPct||""} onChange={e=>setFormContrato(p=>({...p,jurosAtrasoPct:e.target.value}))}/></F>
+            <F label="Honorários cobrança (%)" h><input style={IS} type="number" value={formContrato.honorariosPct||""} onChange={e=>setFormContrato(p=>({...p,honorariosPct:e.target.value}))}/></F>
+            <F label="Após quantos dias" h><input style={IS} type="number" value={formContrato.honorariosDias||""} onChange={e=>setFormContrato(p=>({...p,honorariosDias:e.target.value}))}/></F>
+            <F label="Honorários advogado (%)" h><input style={IS} type="number" value={formContrato.honorariosAdvPct||""} onChange={e=>setFormContrato(p=>({...p,honorariosAdvPct:e.target.value}))}/></F>
+            <F label="Após quantos dias" h><input style={IS} type="number" value={formContrato.honorariosAdvDias||""} onChange={e=>setFormContrato(p=>({...p,honorariosAdvDias:e.target.value}))}/></F>
           </R>
-
           <ST>Contrato PDF</ST>
-          <F label="Upload do contrato">
-            <input style={IS} type="file" accept=".pdf" onChange={e=>setContratoFile(e.target.files[0])}/>
-          </F>
-
+          <F label="Upload do contrato"><input style={IS} type="file" accept=".pdf" onChange={e=>setContratoFile(e.target.files[0])}/></F>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:12}}>
-            <button style={s.btnGhost} onClick={()=>setModalContrato(null)}>Cancelar</button>
+            <button style={s.btnG} onClick={()=>setModalContrato(null)}>Cancelar</button>
             <button style={s.btn()} onClick={saveContrato}>Salvar e Gerar Parcelas</button>
           </div>
         </Modal>
@@ -767,18 +973,16 @@ export default function App(){
 
       {/* MODAL PARCELAS */}
       {modalParcelas&&(
-        <Modal title="Parcelas do Contrato" onClose={()=>{setModalParcelas(null);setParcelas([]);setParcelaEdit(null);}} wide>
-          <div style={{marginBottom:14,display:"flex",gap:8,justifyContent:"flex-end"}}>
-            {[{label:"Todas",v:null},{label:"Pendentes",v:"Pendente"},{label:"Pagas",v:"Pago"},{label:"Atrasadas",v:"Atrasado"}].map(f=>(
-              <button key={f.label} style={s.btnGhost} onClick={()=>{}}>{f.label}</button>
-            ))}
-          </div>
-          <div style={{maxHeight:400,overflowY:"auto"}}>
-            <table><thead><tr><th style={s.th}>Competência</th><th style={s.th}>Vencimento</th><th style={s.th}>Valor</th><th style={s.th}>Recebido</th><th style={s.th}>Data Rec.</th><th style={s.th}>Status</th><th style={s.th}></th></tr></thead>
+        <Modal title="Parcelas do Contrato" onClose={()=>{setModalParcelas(null);setParcelas([]);setParcelaEdit(null);setReajustes([]);}} wide>
+          <div style={{maxHeight:360,overflowY:"auto",marginBottom:16}}>
+            <table><thead><tr>
+              <th style={s.th}>Competência</th><th style={s.th}>Vencimento</th><th style={s.th}>Valor</th>
+              <th style={s.th}>Recebido</th><th style={s.th}>Data Rec.</th><th style={s.th}>Status</th><th style={s.th}></th>
+            </tr></thead>
               <tbody>{parcelas.map(p=>(
                 <tr key={p.id} style={{background:parcelaEdit?.id===p.id?"#6366f108":"transparent"}}>
                   <td style={s.td}>{p.competencia}</td>
-                  <td style={{...s.td,color:p.status==="Atrasado"?"#ef4444":"#cbd5e1"}}>{fmtDate(p.vencimento)}</td>
+                  <td style={{...s.td,color:p.status==="Atrasado"||new Date(p.vencimento)<new Date()&&p.status==="Pendente"?"#ef4444":"#cbd5e1"}}>{fmtDate(p.vencimento)}</td>
                   <td style={{...s.td,fontFamily:"monospace"}}>
                     {parcelaEdit?.id===p.id?<input style={{...IS,width:100}} type="number" value={parcelaEdit.valor} onChange={e=>setParcelaEdit(x=>({...x,valor:e.target.value}))}/>:fmt(p.valor)}
                   </td>
@@ -795,19 +999,17 @@ export default function App(){
                     {parcelaEdit?.id===p.id?(
                       <div style={{display:"flex",gap:4}}>
                         <button style={s.btn("#22c55e")} onClick={saveParcela}>✓</button>
-                        <button style={s.btnGhost} onClick={()=>setParcelaEdit(null)}>✕</button>
+                        <button style={s.btnG} onClick={()=>setParcelaEdit(null)}>✕</button>
                       </div>
-                    ):<button style={s.btnGhost} onClick={()=>setParcelaEdit({...p,valor:String(p.valor),valorRecebido:String(p.valorRecebido||""),dataRecebimento:p.dataRecebimento?.slice(0,10)||""})}>✎</button>}
+                    ):<button style={s.btnG} onClick={()=>setParcelaEdit({...p,valor:String(p.valor),valorRecebido:String(p.valorRecebido||""),dataRecebimento:p.dataRecebimento?.slice(0,10)||""})}>✎</button>}
                   </td>
                 </tr>
               ))}</tbody>
             </table>
           </div>
-
-          {/* Reajustes */}
           <ST>Histórico de Reajustes</ST>
-          {reajustes.length===0?<div style={{color:"#475569",fontSize:13,marginBottom:12}}>Nenhum reajuste registrado</div>:
-          <table><thead><tr><th style={s.th}>Data</th><th style={s.th}>Índice</th><th style={s.th}>Período</th><th style={s.th}>Valor Anterior</th><th style={s.th}>%</th><th style={s.th}>Valor Novo</th></tr></thead>
+          {reajustes.length===0?<div style={{color:"#475569",fontSize:13,marginBottom:8}}>Nenhum reajuste</div>:
+          <table><thead><tr><th style={s.th}>Data</th><th style={s.th}>Índice</th><th style={s.th}>Período</th><th style={s.th}>Anterior</th><th style={s.th}>%</th><th style={s.th}>Novo</th></tr></thead>
             <tbody>{reajustes.map(r=><tr key={r.id}>
               <td style={s.td}>{fmtDate(r.dataReajuste)}</td><td style={s.td}>{r.indice}</td>
               <td style={s.td}>{fmtDate(r.periodoInicio)} a {fmtDate(r.periodoFim)}</td>
@@ -825,20 +1027,18 @@ export default function App(){
           <R>
             <F label="Data do reajuste *" h><input style={IS} type="date" value={formReajuste.dataReajuste} onChange={e=>setFormReajuste(p=>({...p,dataReajuste:e.target.value}))}/></F>
             <F label="Índice" h><select style={IS} value={formReajuste.indice} onChange={e=>setFormReajuste(p=>({...p,indice:e.target.value}))}>{indiceOpts.map(o=><option key={o}>{o}</option>)}</select></F>
-            <F label="Período de apuração — De" h><input style={IS} type="date" value={formReajuste.periodoInicio} onChange={e=>setFormReajuste(p=>({...p,periodoInicio:e.target.value}))}/></F>
-            <F label="Período de apuração — Até" h><input style={IS} type="date" value={formReajuste.periodoFim} onChange={e=>setFormReajuste(p=>({...p,periodoFim:e.target.value}))}/></F>
-            <F label="Valor anterior (R$)" h>
-              <input style={IS} type="number" value={formReajuste.valorAnterior} onChange={e=>{const va=+e.target.value;const vn=va+(va*+formReajuste.percentual/100);setFormReajuste(p=>({...p,valorAnterior:e.target.value,valorNovo:vn.toFixed(2)}))}}/></F>
-            <F label="Percentual do índice (%)" h>
-              <input style={IS} type="number" value={formReajuste.percentual} onChange={e=>{const pct=+e.target.value;const vn=+formReajuste.valorAnterior+(+formReajuste.valorAnterior*pct/100);setFormReajuste(p=>({...p,percentual:e.target.value,valorNovo:vn.toFixed(2)}))}}/></F>
+            <F label="Período De" h><input style={IS} type="date" value={formReajuste.periodoInicio} onChange={e=>setFormReajuste(p=>({...p,periodoInicio:e.target.value}))}/></F>
+            <F label="Período Até" h><input style={IS} type="date" value={formReajuste.periodoFim} onChange={e=>setFormReajuste(p=>({...p,periodoFim:e.target.value}))}/></F>
+            <F label="Valor anterior (R$)" h><input style={IS} type="number" value={formReajuste.valorAnterior} onChange={e=>{const va=+e.target.value;const vn=va+(va*+formReajuste.percentual/100);setFormReajuste(p=>({...p,valorAnterior:e.target.value,valorNovo:vn.toFixed(2)}));}}/></F>
+            <F label="Percentual (%)" h><input style={IS} type="number" value={formReajuste.percentual} onChange={e=>{const pct=+e.target.value;const vn=+formReajuste.valorAnterior*(1+pct/100);setFormReajuste(p=>({...p,percentual:e.target.value,valorNovo:vn.toFixed(2)}));}}/></F>
             <F label="Valor novo (R$) *" h>
               <input style={IS} type="number" value={formReajuste.valorNovo} onChange={e=>setFormReajuste(p=>({...p,valorNovo:e.target.value}))}/>
-              {formReajuste.valorAnterior&&formReajuste.valorNovo&&<div style={{fontSize:11,color:"#22c55e",marginTop:3}}>Diferença: {fmt(+formReajuste.valorNovo - +formReajuste.valorAnterior)}/mês</div>}
+              {formReajuste.valorAnterior&&formReajuste.valorNovo&&<div style={{fontSize:11,color:"#22c55e",marginTop:3}}>+{fmt(+formReajuste.valorNovo - +formReajuste.valorAnterior)}/mês</div>}
             </F>
           </R>
-          <F label="Observação"><input style={IS} value={formReajuste.obs} onChange={e=>setFormReajuste(p=>({...p,obs:e.target.value}))}/></F>
+          <F label="Observação"><input style={IS} value={formReajuste.obs||""} onChange={e=>setFormReajuste(p=>({...p,obs:e.target.value}))}/></F>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
-            <button style={s.btnGhost} onClick={()=>setModalReajuste(null)}>Cancelar</button>
+            <button style={s.btnG} onClick={()=>setModalReajuste(null)}>Cancelar</button>
             <button style={s.btn("#22c55e")} onClick={saveReajuste}>Salvar Reajuste</button>
           </div>
         </Modal>
@@ -847,23 +1047,21 @@ export default function App(){
       {/* MODAL REPASSE */}
       {modalRepasse&&(
         <Modal title="Gerar Repasse ao Locador" onClose={()=>setModalRepasse(null)}>
-          <F label="Contrato *"><select style={IS} value={formRepasse.contratoId} onChange={e=>{setFormRepasse(p=>({...p,contratoId:e.target.value}));onContratoRepasse(e.target.value);}}>
-            <option value="">Selecione...</option>{contratos.filter(c=>c.status==="Ativo").map(c=><option key={c.id} value={c.id}>{c.codigo} — {c.locador}</option>)}
+          <F label="Contrato *"><select style={IS} value={formRepasse.contratoId} onChange={e=>{const c=calcRepasse(e.target.value);setFormRepasse(p=>({...p,contratoId:e.target.value,...c}));}}>
+            <option value="">Selecione...</option>{contratos.filter(c=>c.status==="Ativo").map(c=><option key={c.id} value={c.id}>{c.codigo} — {c.locadorNomeFull||c.locador}</option>)}
           </select></F>
           <R>
             <F label="Competência *" h><input style={IS} value={formRepasse.competencia} onChange={e=>setFormRepasse(p=>({...p,competencia:e.target.value}))} placeholder="Ex: Maio/2025"/></F>
-            <F label="Data do repasse" h><input style={IS} type="date" value={formRepasse.dataRepasse} onChange={e=>setFormRepasse(p=>({...p,dataRepasse:e.target.value}))}/></F>
+            <F label="Data do repasse" h><input style={IS} type="date" value={formRepasse.dataRepasse||""} onChange={e=>setFormRepasse(p=>({...p,dataRepasse:e.target.value}))}/></F>
           </R>
           {formRepasse.contratoId&&(
-            <div style={{background:"#0f1623",borderRadius:10,padding:16,marginBottom:14,border:"1px solid #2d3748"}}>
-              <div style={{fontSize:12,color:"#6366f1",fontWeight:700,marginBottom:10}}>ACERTO DO MÊS — edite se necessário</div>
+            <div style={{background:"#0f1623",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #2d3748"}}>
+              <div style={{fontSize:11,color:"#6366f1",fontWeight:700,marginBottom:10}}>ACERTO — edite se necessário</div>
               <R>
-                <F label="Valor recebido (R$)" h><input style={IS} type="number" value={formRepasse.valorRecebido} onChange={e=>setFormRepasse(p=>({...p,valorRecebido:e.target.value,valorLiquido:(+e.target.value - +p.totalDespesas - +p.taxaAdm).toFixed(2)}))}/></F>
-                <F label="Total despesas (R$)" h><input style={IS} type="number" value={formRepasse.totalDespesas} onChange={e=>setFormRepasse(p=>({...p,totalDespesas:e.target.value,valorLiquido:(+p.valorRecebido - +e.target.value - +p.taxaAdm).toFixed(2)}))}/></F>
-                <F label="Taxa adm (R$)" h><input style={IS} type="number" value={formRepasse.taxaAdm} onChange={e=>setFormRepasse(p=>({...p,taxaAdm:e.target.value,valorLiquido:(+p.valorRecebido - +p.totalDespesas - +e.target.value).toFixed(2)}))}/></F>
-                <F label="Valor líquido (R$)" h>
-                  <input style={{...IS,color:"#22c55e",fontWeight:700}} type="number" value={formRepasse.valorLiquido} onChange={e=>setFormRepasse(p=>({...p,valorLiquido:e.target.value}))}/>
-                </F>
+                <F label="Valor recebido (R$)" h><input style={IS} type="number" value={formRepasse.valorRecebido||""} onChange={e=>setFormRepasse(p=>({...p,valorRecebido:e.target.value,valorLiquido:(+e.target.value - +p.totalDespesas - +p.taxaAdm).toFixed(2)}))}/></F>
+                <F label="Total despesas (R$)" h><input style={IS} type="number" value={formRepasse.totalDespesas||""} onChange={e=>setFormRepasse(p=>({...p,totalDespesas:e.target.value,valorLiquido:(+p.valorRecebido - +e.target.value - +p.taxaAdm).toFixed(2)}))}/></F>
+                <F label="Taxa adm (R$)" h><input style={IS} type="number" value={formRepasse.taxaAdm||""} onChange={e=>setFormRepasse(p=>({...p,taxaAdm:e.target.value,valorLiquido:(+p.valorRecebido - +p.totalDespesas - +e.target.value).toFixed(2)}))}/></F>
+                <F label="Valor líquido (R$)" h><input style={{...IS,color:"#22c55e",fontWeight:700}} type="number" value={formRepasse.valorLiquido||""} onChange={e=>setFormRepasse(p=>({...p,valorLiquido:e.target.value}))}/></F>
               </R>
             </div>
           )}
@@ -871,10 +1069,10 @@ export default function App(){
             <F label="Forma de pagamento" h><select style={IS} value={formRepasse.formaPagamento} onChange={e=>setFormRepasse(p=>({...p,formaPagamento:e.target.value}))}>{fpOpts.map(o=><option key={o}>{o}</option>)}</select></F>
             <F label="Status" h><select style={IS} value={formRepasse.status} onChange={e=>setFormRepasse(p=>({...p,status:e.target.value}))}>{["Pendente","Repassado"].map(t=><option key={t}>{t}</option>)}</select></F>
           </R>
-          <F label="Comprovante (PDF/imagem)"><input style={IS} type="file" accept=".pdf,image/*" onChange={e=>setComprovanteFile(e.target.files[0])}/></F>
-          <F label="Observação"><input style={IS} value={formRepasse.obs} onChange={e=>setFormRepasse(p=>({...p,obs:e.target.value}))}/></F>
+          <F label="Comprovante"><input style={IS} type="file" accept=".pdf,image/*" onChange={e=>setComprovanteFile(e.target.files[0])}/></F>
+          <F label="Observação"><input style={IS} value={formRepasse.obs||""} onChange={e=>setFormRepasse(p=>({...p,obs:e.target.value}))}/></F>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
-            <button style={s.btnGhost} onClick={()=>setModalRepasse(null)}>Cancelar</button>
+            <button style={s.btnG} onClick={()=>setModalRepasse(null)}>Cancelar</button>
             <button style={s.btn("#06b6d4")} onClick={saveRepasse}>Confirmar Repasse</button>
           </div>
         </Modal>
@@ -883,142 +1081,227 @@ export default function App(){
       {/* MODAL DESPESA */}
       {modalDespesa&&(
         <Modal title={modalDespesa==="new"?"Registrar Despesa":"Editar Despesa"} onClose={()=>setModalDespesa(null)}>
-          <F label="Contrato *"><select style={IS} value={formDespesa.contratoId} onChange={e=>setFormDespesa(p=>({...p,contratoId:e.target.value}))}>
-            <option value="">Selecione...</option>{contratos.map(c=><option key={c.id} value={c.id}>{c.codigo} — {c.locatario}</option>)}
-          </select></F>
+          <F label="Contrato *"><select style={IS} value={formDespesa.contratoId} onChange={e=>setFormDespesa(p=>({...p,contratoId:e.target.value}))}><option value="">Selecione...</option>{contratos.map(c=><option key={c.id} value={c.id}>{c.codigo} — {c.locatario}</option>)}</select></F>
           <R>
-            <F label="Data *" h><input style={IS} type="date" value={formDespesa.data} onChange={e=>setFormDespesa(p=>({...p,data:e.target.value}))}/></F>
-            <F label="Valor (R$) *" h><input style={IS} type="number" value={formDespesa.valor} onChange={e=>setFormDespesa(p=>({...p,valor:e.target.value}))}/></F>
+            <F label="Data *" h><input style={IS} type="date" value={formDespesa.data||""} onChange={e=>setFormDespesa(p=>({...p,data:e.target.value}))}/></F>
+            <F label="Valor (R$) *" h><input style={IS} type="number" value={formDespesa.valor||""} onChange={e=>setFormDespesa(p=>({...p,valor:e.target.value}))}/></F>
             <F label="Tipo" h><select style={IS} value={formDespesa.tipo} onChange={e=>setFormDespesa(p=>({...p,tipo:e.target.value}))}>{["Manutenção","Condomínio","IPTU","Seguro","Pintura","Elétrica","Hidráulica","Outros"].map(t=><option key={t}>{t}</option>)}</select></F>
             <F label="Status" h><select style={IS} value={formDespesa.status} onChange={e=>setFormDespesa(p=>({...p,status:e.target.value}))}>{["Pago","Pendente"].map(t=><option key={t}>{t}</option>)}</select></F>
           </R>
-          <F label="Descrição"><input style={IS} value={formDespesa.descricao} onChange={e=>setFormDespesa(p=>({...p,descricao:e.target.value}))}/></F>
+          <F label="Descrição"><input style={IS} value={formDespesa.descricao||""} onChange={e=>setFormDespesa(p=>({...p,descricao:e.target.value}))}/></F>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
-            <button style={s.btnGhost} onClick={()=>setModalDespesa(null)}>Cancelar</button>
+            <button style={s.btnG} onClick={()=>setModalDespesa(null)}>Cancelar</button>
             <button style={s.btn("#f59e0b")} onClick={saveDespesa}>Salvar</button>
           </div>
         </Modal>
       )}
 
-      {/* MODAL COMPROVANTE */}
+      {/* MODAL COMPROVANTE REPASSE */}
       {repasseId&&(
-        <Modal title="Anexar Comprovante e Marcar Repassado" onClose={()=>setRepasseId(null)}>
-          <F label="Comprovante (PDF ou imagem)">
-            <input style={IS} type="file" accept=".pdf,image/*" onChange={e=>setComprovanteFile(e.target.files[0])}/>
-          </F>
+        <Modal title="Confirmar Repasse" onClose={()=>setRepasseId(null)}>
+          <F label="Comprovante (PDF ou imagem)"><input style={IS} type="file" accept=".pdf,image/*" onChange={e=>setComprovanteFile(e.target.files[0])}/></F>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
-            <button style={s.btnGhost} onClick={()=>setRepasseId(null)}>Cancelar</button>
-            <button style={s.btn("#22c55e")} onClick={()=>uploadComprovante(repasseId)}>Confirmar Repasse</button>
+            <button style={s.btnG} onClick={()=>setRepasseId(null)}>Cancelar</button>
+            <button style={s.btn("#22c55e")} onClick={()=>marcarRepassado(repasseId)}>Confirmar</button>
           </div>
         </Modal>
       )}
 
-      {/* DETALHE IMÓVEL + DOCUMENTOS */}
-      {detalheImovel&&(
-        <Modal title={`Imóvel — ${detalheImovel.codigo}`} onClose={()=>setDetalheImovel(null)} wide>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 24px",marginBottom:16}}>
-            {[
-              ["Endereço",detalheImovel.endereco],["Bairro",detalheImovel.bairro],
-              ["Tipo",detalheImovel.tipo],["Área",detalheImovel.area?`${detalheImovel.area}m²`:"—"],
-              ["Condomínio",detalheImovel.nomeCondominio],["Bloco/Torre",detalheImovel.bloco],
-              ["Apartamento",detalheImovel.apartamento],["Quartos",detalheImovel.quartos],
-              ["Mobiliado",detalheImovel.mobiliado],["Valor Ideal",detalheImovel.valorIdeal?fmt(detalheImovel.valorIdeal):"—"],
-              ["Tel. Portaria",detalheImovel.telPortaria],["Tel. Síndico",detalheImovel.telSindico],
-              ["Tel. Contabilidade",detalheImovel.telContabilidade],["Tel. Cobrança",detalheImovel.telCobranca],
-            ].map(([k,v])=>(
-              <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #1e2940"}}>
-                <span style={{color:"#64748b",fontSize:13}}>{k}</span>
-                <span style={{fontSize:13,fontWeight:500}}>{v||"—"}</span>
-              </div>
-            ))}
-          </div>
-
-          <ST>Documentos</ST>
-          {isAdmin&&(
-            <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"flex-end"}}>
-              <div style={{flex:1,minWidth:160}}>
-                <label style={LS}>Tipo</label>
-                <select style={IS} value={uploadDocTipo} onChange={e=>setUploadDocTipo(e.target.value)}>
-                  {[["contrato_adm","Contrato de Administração"],["energia","Conta de Energia"],["agua","Conta de Água"],["gas","Conta de Gás"],["condominio","Conta de Condomínio"],["outro","Outro"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
-                </select>
-              </div>
-              <div style={{flex:2,minWidth:200}}>
-                <label style={LS}>Arquivo</label>
-                <input style={IS} type="file" accept=".pdf,image/*" onChange={e=>setUploadDocFile(e.target.files[0])}/>
-              </div>
-              <button style={s.btn()} onClick={async()=>{
-                if(!uploadDocFile) return showToast("Selecione um arquivo","error");
-                try{
-                  const novo=await api.uploadDocumento(detalheImovel.id,uploadDocTipo,uploadDocFile);
-                  setDocumentos(p=>[...p,novo]);setUploadDocFile(null);showToast("Documento enviado!");
-                }catch(e){showToast(e.message,"error");}
-              }}>Enviar</button>
-            </div>
-          )}
-          {documentos.length===0?<div style={{color:"#475569",fontSize:13}}>Nenhum documento cadastrado</div>:
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {[["contrato_adm","Contrato de Administração"],["energia","Energia"],["agua","Água"],["gas","Gás"],["condominio","Condomínio"],["outro","Outros"]].map(([tipo,label])=>{
-              const docs=documentos.filter(d=>d.tipo===tipo);
-              if(!docs.length) return null;
-              return(
-                <div key={tipo}>
-                  <div style={{fontSize:11,color:"#6366f1",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{label}</div>
-                  {docs.map(doc=>(
-                    <div key={doc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#0f1623",borderRadius:8,border:"1px solid #2d3748",marginBottom:6}}>
-                      <span style={{fontSize:13,color:"#94a3b8"}}>📄 {doc.nome}</span>
-                      <div style={{display:"flex",gap:6}}>
-                        <button style={s.btnGhost} onClick={async()=>{try{const{url}=await api.getDocumentoUrl(doc.id);window.open(url,"_blank");}catch(e){showToast(e.message,"error");}}}>Ver</button>
-                        {isAdmin&&<button style={{...s.btnGhost,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{await api.deleteDocumento(doc.id);setDocumentos(p=>p.filter(x=>x.id!==doc.id));}}>✕</button>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>}
-        </Modal>
+      {/* MODAL DETALHE (locador/locatario/imovel/contrato) */}
+      {modalDetalhe&&(
+        <DetalheModal
+          tipo={modalDetalhe.tipo}
+          data={modalDetalhe.data}
+          onClose={()=>setModalDetalhe(null)}
+          isAdmin={isAdmin}
+          showToast={showToast}
+          s={s}
+        />
       )}
+    </div>
+  );
+}
 
-      {/* DETALHE CONTRATO */}
-      {detalheContrato&&(
-        <Modal title={`Contrato — ${detalheContrato.codigo}`} onClose={()=>setDetalheContrato(null)} wide>
+// ─── Detalhe Modal Component ──────────────────────────────────────────────────
+function DetalheModal({tipo,data,onClose,isAdmin,showToast,s}){
+  const [docs,setDocs]=useState([]);
+  const [vistorias,setVistorias]=useState([]);
+  const [historico,setHistorico]=useState([]);
+  const [activeTab,setActiveTab]=useState("dados");
+  const [novaVistoria,setNovaVistoria]=useState({tipo:"Entrada",data:"",responsavel:"",observacoes:""});
+  const [novoHistorico,setNovoHistorico]=useState({tipo:"Ocorrência",descricao:"",data:""});
+
+  const IS2={width:"100%",background:"#0f1623",border:"1px solid #2d3748",borderRadius:8,color:"#e2e8f0",padding:"8px 12px",fontSize:14,boxSizing:"border-box",outline:"none",fontFamily:"inherit"};
+
+  useEffect(()=>{
+    if(tipo==="locador"){api.getDocsPessoa("locador",data.id).then(setDocs).catch(()=>{});}
+    if(tipo==="locatario"){api.getDocsPessoa("locatario",data.id).then(setDocs).catch(()=>{});}
+    if(tipo==="imovel"){
+      api.getDocsImovel(data.id).then(setDocs).catch(()=>{});
+      api.getVistorias(data.id).then(setVistorias).catch(()=>{});
+      api.getHistorico(data.id).then(setHistorico).catch(()=>{});
+    }
+  },[tipo,data.id]);
+
+  const fmt2=(v)=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+  const fmtDate2=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString("pt-BR"):"-";
+
+  const campos={
+    locador:[["Nome",data.nome],["CPF/CNPJ",data.cpfCnpj],["Nacionalidade",data.nacionalidade],["Estado Civil",data.estadoCivil],["Profissão",data.profissao],["RG",data.rg],["Órgão",data.rgOrgao],["Telefone",data.telefone],["Email",data.email],["Endereço",data.endereco],["Bairro",data.bairro],["Cidade",data.cidade],["Estado",data.estado],["CEP",data.cep],["Procurador",data.procuradorNome],["CPF Procurador",data.procuradorCpf],["Banco",data.banco],["Agência",data.agencia],["Conta",data.conta],["PIX",data.pix],["Obs",data.obs]],
+    locatario:[["Nome",data.nome],["CPF",data.cpf],["Nacionalidade",data.nacionalidade],["Estado Civil",data.estadoCivil],["Profissão",data.profissao],["RG",data.rg],["CNH",data.cnh],["Telefone",data.telefone],["Email",data.email],["Renda",data.renda?fmt2(data.renda):"—"],["Endereço",data.endereco],["Bairro",data.bairro],["Cidade",data.cidade],["Fiador",data.fiadorNome],["CPF Fiador",data.fiadorCpf],["Tel. Fiador",data.fiadorTelefone],["Obs",data.obs]],
+    imovel:[["Código",data.codigo],["Endereço",data.endereco],["Bairro",data.bairro],["Cidade",data.cidade],["CEP",data.cep],["Tipo",data.tipo],["Área",data.area?`${data.area}m²`:"—"],["Condomínio",data.nomeCondominio],["Bloco",data.bloco],["Apto",data.apartamento],["Quartos",data.quartos],["Mobiliado",data.mobiliado],["Valor Ideal",data.valorIdeal?fmt2(data.valorIdeal):"—"],["Locador",data.locadorNome],["Tel. Portaria",data.telPortaria],["Tel. Síndico",data.telSindico],["Tel. Contabilidade",data.telContabilidade],["Tel. Cobrança",data.telCobranca]],
+    contrato:[],
+  }[tipo]||[];
+
+  const tabs=[{id:"dados",label:"Dados"},
+    {id:"docs",label:"Documentos"},
+    ...(tipo==="imovel"?[{id:"vistorias",label:"Vistorias"},{id:"historico",label:"Histórico"}]:[]),
+  ];
+
+  const tiposDoc=tipo==="imovel"?
+    [["contrato_adm","Contrato ADM"],["energia","Energia"],["agua","Água"],["gas","Gás"],["condominio","Condomínio"],["iptu","IPTU"],["outros","Outros"]]:
+    [["rg","RG"],["cpf","CPF"],["comprovante_renda","Comp. Renda"],["comprovante_endereco","Comp. Endereço"],["outros","Outros"]];
+
+  async function handleUpload(docTipo,file,cb){
+    try{
+      let doc;
+      if(tipo==="imovel") doc=await api.uploadDocImovel(data.id,docTipo,file);
+      else doc=await api.uploadDocPessoa(tipo,data.id,docTipo,file);
+      setDocs(p=>[...p,doc]);showToast("Documento enviado!");if(cb)cb();
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  async function handleView(id){
+    try{
+      let r;
+      if(tipo==="imovel") r=await api.getDocImovelUrl(id);
+      else r=await api.getDocUrl(id);
+      window.open(r.url,"_blank");
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  async function handleDelete(id){
+    try{
+      if(tipo==="imovel") await api.deleteDocImovel(id);
+      else await api.deleteDocPessoa(id);
+      setDocs(p=>p.filter(x=>x.id!==id));showToast("Excluído");
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  const titles={locador:"Locador",locatario:"Locatário",imovel:"Imóvel",contrato:"Contrato"};
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflowY:"auto"}}>
+      <div style={{background:"#1a1f2e",borderRadius:16,padding:28,width:"100%",maxWidth:720,border:"1px solid #2d3748",boxShadow:"0 25px 60px #000a",margin:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <h3 style={{color:"#e2e8f0",fontWeight:700,fontSize:18,margin:0}}>{titles[tipo]} — {data.nome||data.codigo||data.locatario}</h3>
+          <button onClick={onClose} style={{background:"none",border:"none",color:"#94a3b8",fontSize:22,cursor:"pointer"}}>✕</button>
+        </div>
+
+        {/* Tabs */}
+        <div style={{display:"flex",gap:4,marginBottom:16,borderBottom:"1px solid #1e2940",paddingBottom:8}}>
+          {tabs.map(t=>(
+            <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{background:activeTab===t.id?"#6366f120":"none",border:"none",borderBottom:activeTab===t.id?"2px solid #6366f1":"2px solid transparent",color:activeTab===t.id?"#818cf8":"#64748b",padding:"6px 14px",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,borderRadius:"6px 6px 0 0"}}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab==="dados"&&(
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 24px"}}>
-            {[
-              ["Imóvel",`${detalheContrato.codigo} — ${detalheContrato.endereco}`],
-              ["Locatário",detalheContrato.locatario],["Tel. Locatário",detalheContrato.telefoneLocatario],
-              ["Locador",detalheContrato.locador],["Tel. Locador",detalheContrato.telefoneLocador],
-              ["Aluguel Inicial",fmt(detalheContrato.aluguelInicial)],
-              ["Aluguel Atual",fmt(detalheContrato.aluguelAtual)],
-              ["Pago por",detalheContrato.aluguelPagaPor],
-              ["Condomínio",`${fmt(detalheContrato.condominio)} (${detalheContrato.condominioPagaPor})`],
-              ["IPTU",`${fmt(detalheContrato.iptu)} (${detalheContrato.iptuPagaPor})`],
-              ["Taxa Adm",`${detalheContrato.taxaAdmPct}% = ${fmt((Number(detalheContrato.aluguelAtual)*Number(detalheContrato.taxaAdmPct))/100)}/mês`],
-              ["Vencimento",`Dia ${detalheContrato.vencimento}`],
-              ["Forma Pagamento",detalheContrato.formaPagamento],
-              ["Início",fmtDate(detalheContrato.inicio)],
-              ["Duração",`${detalheContrato.duracaoMeses} meses`],
-              ["Término",fmtDate(detalheContrato.fim)],
-              ["Status",detalheContrato.status],
-              ["Multa rescisão",fmt(calcMulRescisao(detalheContrato))+" (proporcional)"],
-              ["Multa atraso",`${detalheContrato.multaAtrasoPct||0}%`],
-              ["Juros atraso",`${detalheContrato.jurosAtrasoPct||0}% a.m.`],
-              ["Hon. cobrança",`${detalheContrato.honorariosPct||0}% após ${detalheContrato.honorariosDias||0} dias`],
-              ["Hon. advogado",`${detalheContrato.honorariosAdvPct||0}% após ${detalheContrato.honorariosAdvDias||0} dias`],
-            ].map(([k,v])=>(
-              <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #1e2940"}}>
+            {campos.map(([k,v])=>(
+              <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #1e2940"}}>
                 <span style={{color:"#64748b",fontSize:13}}>{k}</span>
                 <span style={{fontSize:13,fontWeight:500,textAlign:"right",maxWidth:"55%"}}>{v||"—"}</span>
               </div>
             ))}
           </div>
-          {detalheContrato.contratoPdfNome&&(
-            <div style={{marginTop:14,padding:12,background:"#0f1623",borderRadius:8,border:"1px solid #2d3748",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:13,color:"#94a3b8"}}>📄 {detalheContrato.contratoPdfNome}</span>
-              <button style={s.btn()} onClick={async()=>{try{const{url}=await api.getContratoPdfUrl(detalheContrato.id);window.open(url,"_blank");}catch(e){showToast(e.message,"error");}}}>Visualizar PDF</button>
-            </div>
-          )}
-        </Modal>
-      )}
+        )}
+
+        {activeTab==="docs"&&(
+          <DocUploader
+            docs={docs}
+            onUpload={handleUpload}
+            onView={handleView}
+            onDelete={handleDelete}
+            tipos={tiposDoc}
+            isAdmin={isAdmin}
+          />
+        )}
+
+        {activeTab==="vistorias"&&tipo==="imovel"&&(
+          <div>
+            {isAdmin&&(
+              <div style={{background:"#0f1623",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #2d3748"}}>
+                <div style={{fontSize:12,color:"#6366f1",fontWeight:700,marginBottom:10}}>Nova Vistoria</div>
+                <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:120}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Tipo</label>
+                    <select style={IS2} value={novaVistoria.tipo} onChange={e=>setNovaVistoria(p=>({...p,tipo:e.target.value}))}>{["Entrada","Saída","Periódica"].map(t=><option key={t}>{t}</option>)}</select></div>
+                  <div style={{flex:1,minWidth:130}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Data</label>
+                    <input style={IS2} type="date" value={novaVistoria.data} onChange={e=>setNovaVistoria(p=>({...p,data:e.target.value}))}/></div>
+                  <div style={{flex:2,minWidth:150}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Responsável</label>
+                    <input style={IS2} value={novaVistoria.responsavel} onChange={e=>setNovaVistoria(p=>({...p,responsavel:e.target.value}))}/></div>
+                </div>
+                <div style={{marginTop:10}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Observações</label>
+                  <textarea style={{...IS2,minHeight:60}} value={novaVistoria.observacoes} onChange={e=>setNovaVistoria(p=>({...p,observacoes:e.target.value}))}/></div>
+                <button style={{background:"#6366f1",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,marginTop:8}} onClick={async()=>{
+                  if(!novaVistoria.data||!novaVistoria.responsavel) return showToast("Preencha data e responsável","error");
+                  try{
+                    const v=await api.createVistoria(data.id,novaVistoria);
+                    setVistorias(p=>[v,...p]);
+                    setNovaVistoria({tipo:"Entrada",data:"",responsavel:"",observacoes:""});
+                    showToast("Vistoria registrada!");
+                  }catch(e){showToast(e.message,"error");}
+                }}>Registrar Vistoria</button>
+              </div>
+            )}
+            {vistorias.length===0?<div style={{color:"#475569",fontSize:13}}>Nenhuma vistoria registrada</div>:
+            vistorias.map(v=>(
+              <div key={v.id} style={{background:"#0f1623",borderRadius:10,padding:14,marginBottom:10,border:"1px solid #2d3748"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <div><span style={{fontWeight:700,color:"#e2e8f0"}}>{v.tipo}</span><span style={{color:"#64748b",fontSize:12,marginLeft:8}}>{fmtDate2(v.data)} · {v.responsavel}</span></div>
+                </div>
+                {v.observacoes&&<div style={{fontSize:13,color:"#94a3b8",marginBottom:8}}>{v.observacoes}</div>}
+                <div style={{fontSize:11,color:"#64748b"}}>{v.fotos?.filter(f=>f.id)?.length||0} foto(s)</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab==="historico"&&tipo==="imovel"&&(
+          <div>
+            {isAdmin&&(
+              <div style={{background:"#0f1623",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #2d3748"}}>
+                <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end"}}>
+                  <div style={{flex:1,minWidth:120}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Tipo</label>
+                    <select style={IS2} value={novoHistorico.tipo} onChange={e=>setNovoHistorico(p=>({...p,tipo:e.target.value}))}>{["Ocorrência","Manutenção","Reclamação","Visita","Outros"].map(t=><option key={t}>{t}</option>)}</select></div>
+                  <div style={{flex:1,minWidth:130}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Data</label>
+                    <input style={IS2} type="date" value={novoHistorico.data} onChange={e=>setNovoHistorico(p=>({...p,data:e.target.value}))}/></div>
+                  <div style={{flex:3,minWidth:200}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Descrição</label>
+                    <input style={IS2} value={novoHistorico.descricao} onChange={e=>setNovoHistorico(p=>({...p,descricao:e.target.value}))}/></div>
+                  <button style={{background:"#6366f1",color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13}} onClick={async()=>{
+                    if(!novoHistorico.descricao||!novoHistorico.data) return showToast("Preencha descrição e data","error");
+                    try{
+                      const h=await api.addHistorico(data.id,novoHistorico);
+                      setHistorico(p=>[h,...p]);
+                      setNovoHistorico({tipo:"Ocorrência",descricao:"",data:""});
+                      showToast("Registrado!");
+                    }catch(e){showToast(e.message,"error");}
+                  }}>Adicionar</button>
+                </div>
+              </div>
+            )}
+            {historico.length===0?<div style={{color:"#475569",fontSize:13}}>Nenhum histórico</div>:
+            historico.map(h=>(
+              <div key={h.id} style={{display:"flex",gap:12,padding:"8px 0",borderBottom:"1px solid #1e2940"}}>
+                <div style={{minWidth:80,fontSize:11,color:"#64748b"}}>{fmtDate2(h.data)}</div>
+                <div style={{flex:1}}><span style={{fontSize:11,background:"#6366f120",color:"#818cf8",padding:"1px 8px",borderRadius:10,marginRight:6}}>{h.tipo}</span><span style={{fontSize:13}}>{h.descricao}</span></div>
+                <div style={{fontSize:11,color:"#475569"}}>{h.usuarioNome}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
