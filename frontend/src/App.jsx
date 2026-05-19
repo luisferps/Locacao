@@ -1,4 +1,4 @@
-// v5
+// v10
 import { useState, useEffect, useMemo, useRef } from "react";
 import { api } from "./api.js";
 import Auth from "./Auth.jsx";
@@ -247,20 +247,47 @@ function DetalheModal({tipo,data,onClose,isAdmin,showToast}){
                   <div style={{flex:2,minWidth:150}}><label style={LS}>Responsável</label><input style={IS} value={novaV.responsavel} onChange={e=>setNovaV(p=>({...p,responsavel:e.target.value}))}/></div>
                 </div>
                 <div style={{marginTop:10}}><label style={LS}>Observações</label><textarea style={{...IS,minHeight:60}} value={novaV.observacoes} onChange={e=>setNovaV(p=>({...p,observacoes:e.target.value}))}/></div>
+                <div style={{marginTop:10}}><label style={LS}>Arquivo da Vistoria (PDF ou imagem)</label><input style={IS} type="file" accept=".pdf,image/*" onChange={e=>setNovaV(p=>({...p,arquivo:e.target.files[0]}))}/></div>
                 <button style={{background:"#6366f1",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,marginTop:8}} onClick={async()=>{
                   if(!novaV.data||!novaV.responsavel)return showToast("Preencha data e responsável","error");
-                  try{const v=await api.createVistoria(data.id,novaV);setVistorias(p=>[v,...p]);setNovaV({tipo:"Entrada",data:"",responsavel:"",observacoes:""});showToast("Vistoria registrada!");}
-                  catch(e){showToast(e.message,"error");}
+                  try{
+                    const v=await api.createVistoria(data.id,novaV);
+                    if(novaV.arquivo){await api.uploadFotoVistoria(v.id,novaV.arquivo);}
+                    setVistorias(p=>[v,...p]);
+                    setNovaV({tipo:"Entrada",data:"",responsavel:"",observacoes:"",arquivo:null});
+                    showToast("Vistoria registrada!");
+                  }catch(e){showToast(e.message,"error");}
                 }}>Registrar</button>
               </div>
             )}
-            {vistorias.length===0?<div style={{color:"#475569",fontSize:13}}>Nenhuma vistoria registrada</div>:
-            vistorias.map(v=>(
-              <div key={v.id} style={{background:"#0f1623",borderRadius:10,padding:14,marginBottom:10,border:"1px solid #2d3748"}}>
-                <div style={{fontWeight:700,color:"#e2e8f0"}}>{v.tipo} <span style={{color:"#64748b",fontSize:12,fontWeight:400}}>· {fmtDate(v.data)} · {v.responsavel}</span></div>
-                {v.observacoes&&<div style={{fontSize:13,color:"#94a3b8",marginTop:6}}>{v.observacoes}</div>}
-              </div>
-            ))}
+
+            {/* Vistoria de Entrada */}
+            {["Entrada","Saída","Periódica"].map(tipoV=>{
+              const vs=vistorias.filter(v=>v.tipo===tipoV);
+              if(!vs.length&&tipoV==="Periódica") return null;
+              return(
+                <div key={tipoV} style={{marginBottom:16}}>
+                  <div style={{fontSize:11,color:tipoV==="Entrada"?"#22c55e":tipoV==="Saída"?"#ef4444":"#6366f1",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>{tipoV}</div>
+                  {vs.length===0?<div style={{color:"#475569",fontSize:13,padding:"8px 0"}}>Nenhuma vistoria de {tipoV.toLowerCase()} registrada</div>:
+                  vs.map(v=>(
+                    <div key={v.id} style={{background:"#0f1623",borderRadius:10,padding:14,marginBottom:8,border:`1px solid ${tipoV==="Entrada"?"#22c55e30":tipoV==="Saída"?"#ef444430":"#6366f130"}`}}>
+                      <div style={{fontWeight:700,color:"#e2e8f0"}}>{v.tipo} <span style={{color:"#64748b",fontSize:12,fontWeight:400}}>· {fmtDate(v.data)} · {v.responsavel}</span></div>
+                      {v.observacoes&&<div style={{fontSize:13,color:"#94a3b8",marginTop:6}}>{v.observacoes}</div>}
+                      {v.fotos&&v.fotos.filter(f=>f.id).length>0&&(
+                        <div style={{marginTop:8,display:"flex",gap:6,flexWrap:"wrap"}}>
+                          {v.fotos.filter(f=>f.id).map(f=>(
+                            <button key={f.id} style={{background:"#1a1f2e",border:"1px solid #2d3748",borderRadius:6,padding:"4px 10px",color:"#94a3b8",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}
+                              onClick={async()=>{try{const r=await api.getFotoVistoriaUrl(f.id);window.open(r.url,"_blank");}catch(e){showToast(e.message,"error");}}}>
+                              📄 {f.nome||"Arquivo"}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -311,6 +338,8 @@ export default function App(){
   const [usuarios,setUsuarios]=useState([]);
   const [dashboard,setDashboard]=useState(null);
   const [inadimplencia,setInadimplencia]=useState([]);
+  const [acertos,setAcertos]=useState([]);
+  const [modalAcerto,setModalAcerto]=useState(null);
   const [loading,setLoading]=useState(true);
   const [toast,setToast]=useState(null);
   const [dreData,setDreData]=useState(null);
@@ -350,24 +379,32 @@ export default function App(){
   const [formLocatario,setFormLocatario]=useState(emptyLocatario);
   const emptyImovel={codigo:"",endereco:"",bairro:"",cidade:"Goiânia",estado:"GO",cep:"",tipo:"Apartamento",area:"",nomeCondominio:"",bloco:"",apartamento:"",quartos:"",mobiliado:"Sem móveis",valorIdeal:"",telPortaria:"",telContabilidade:"",telCobranca:"",telSindico:"",locadorId:""};
   const [formImovel,setFormImovel]=useState(emptyImovel);
-  const emptyContrato={imovelId:"",locatarioId:"",locadorId:"",locatario:"",telefoneLocatario:"",locador:"",telefoneLocador:"",aluguelInicial:"",aluguelPagaPor:"Locatário",condominio:"",condominioPagaPor:"Locatário",iptu:"",iptuPagaPor:"Locatário",caucao:"",taxaAdmPct:10,vencimento:"",formaPagamento:"Pix",inicio:"",duracaoMeses:"",status:"Ativo",multaAtrasoPct:10,jurosAtrasoPct:1,honorariosPct:10,honorariosDias:10,honorariosAdvPct:20,honorariosAdvDias:20,indiceReajuste:"IGPM"};
+  const emptyContrato={imovelId:"",locatarioId:"",locadorId:"",locatario:"",telefoneLocatario:"",locador:"",telefoneLocador:"",aluguelInicial:"",aluguelPagaPor:"Locatário",condominio:"",condominioPagaPor:"Locatário",iptu:"",iptuPagaPor:"Locatário",caucao:"",garantia:"",taxaAdmPct:10,vencimento:"",formaPagamento:"Pix",inicio:"",duracaoMeses:"",status:"Ativo",multaAtrasoPct:10,jurosAtrasoPct:1,honorariosPct:10,honorariosDias:10,honorariosAdvPct:20,honorariosAdvDias:20,indiceReajuste:"IGPM"};
   const [formContrato,setFormContrato]=useState(emptyContrato);
   const emptyReajuste={dataReajuste:"",indice:"IGPM",periodoInicio:"",periodoFim:"",valorAnterior:"",percentual:"",valorNovo:"",obs:""};
   const [formReajuste,setFormReajuste]=useState(emptyReajuste);
+  const defaultGarantias=["Depósito Caução","Seguro Fiança","Fiadores","Título de Capitalização"];
+  const [garantiaOpts,setGarantiaOpts]=useState(()=>{try{const s=localStorage.getItem("garantiaOpts");return s?JSON.parse(s):defaultGarantias;}catch{return defaultGarantias;}});
+  const [novaGarantia,setNovaGarantia]=useState("");
+  const [editGarantia,setEditGarantia]=useState(null);
+  function saveGarantiaOpts(opts){setGarantiaOpts(opts);localStorage.setItem("garantiaOpts",JSON.stringify(opts));}
   const emptyRepasse={contratoId:"",competencia:"",dataRepasse:"",valorRecebido:"",totalDespesas:"",taxaAdm:"",valorLiquido:"",formaPagamento:"Pix",status:"Pendente",obs:""};
   const [formRepasse,setFormRepasse]=useState(emptyRepasse);
   const emptyDespesa={contratoId:"",imovelInfo:"",data:"",valor:"",tipo:"Manutenção",descricao:"",status:"Pago"};
   const [formDespesa,setFormDespesa]=useState(emptyDespesa);
 
+  const emptyAcerto={contratoId:"",dataAcerto:"",status:"Pendente",energia:0,agua:0,gas:0,condominio:0,iptu:0,limpezaEstofados:0,limpezaArCondicionado:0,faxina:0,pintura:0,reparosHidraulicos:0,reparosEletricos:0,vidrosJanelas:0,chavesFechaduras:0,multaRescisao:0,caucaoDevolvido:0,outrosDescricao:"",outrosValor:0,obs:""};
+  const [formAcerto,setFormAcerto]=useState(emptyAcerto);
+
   function showToast(msg,type="ok"){setToast({msg,type});setTimeout(()=>setToast(null),3500);}
 
   useEffect(()=>{
     if(!user) return;
-    const loads=[api.getImoveis(),api.getContratos(),api.getDespesas(),api.getRepasses(),api.getDashboard(),api.getLocadores(),api.getLocatarios()];
+    const loads=[api.getImoveis(),api.getContratos(),api.getDespesas(),api.getRepasses(),api.getDashboard(),api.getLocadores(),api.getLocatarios(),api.getAcertoFinal()];
     if(isAdmin) loads.push(api.getUsuarios());
     if(isInterno) loads.push(api.getInadimplencia());
-    Promise.all(loads).then(([im,con,dep,rep,dash,loc,locat,...rest])=>{
-      setImoveis(im);setContratos(con);setDespesas(dep);setRepasses(rep);setDashboard(dash);setLocadores(loc);setLocatarios(locat);
+    Promise.all(loads).then(([im,con,dep,rep,dash,loc,locat,ace,...rest])=>{
+      setImoveis(im);setContratos(con);setDespesas(dep);setRepasses(rep);setDashboard(dash);setLocadores(loc);setLocatarios(locat);setAcertos(ace||[]);
       let i=0;if(isAdmin)setUsuarios(rest[i++]);if(isInterno)setInadimplencia(rest[i++]||[]);
     }).catch(()=>showToast("Erro ao carregar","error")).finally(()=>setLoading(false));
   },[user]);
@@ -503,6 +540,7 @@ export default function App(){
     {id:"contratos",icon:"📋",label:"Contratos"},
     ...(isInterno?[{id:"despesas",icon:"↑",label:"Despesas"}]:[]),
     {id:"repasses",icon:"⇌",label:"Repasses"},
+    ...(isInterno?[{id:"acerto",icon:"✓",label:"Acerto Final"}]:[]),
     ...(isInterno?[{id:"dre",icon:"$",label:"DRE / Previsão"}]:[]),
     ...(isInterno?[{id:"relatorio",icon:"≡",label:"Relatório"}]:[]),
     ...(isAdmin?[{id:"usuarios",icon:"◎",label:"Usuários"}]:[]),
@@ -893,6 +931,40 @@ export default function App(){
           </div>
         )}
 
+        {/* ACERTO FINAL */}
+        {tab==="acerto"&&isInterno&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div><h2 style={{fontWeight:800,fontSize:22,margin:0}}>Acerto Final</h2><p style={{color:"#475569",fontSize:13,marginTop:4}}>Encerramento de contrato com prestação de contas</p></div>
+              {isAdmin&&<button style={s.btn("#ef4444")} onClick={()=>{setFormAcerto(emptyAcerto);setModalAcerto("new");}}>+ Novo Acerto</button>}
+            </div>
+            <div style={s.card}>
+              {acertos.length===0?<div style={{color:"#475569",textAlign:"center",padding:32}}>Nenhum acerto final registrado</div>:
+              <table><thead><tr>
+                <th style={s.th}>Imóvel</th><th style={s.th}>Contrato</th><th style={s.th}>Locatário</th>
+                <th style={s.th}>Data</th><th style={s.th}>Total Débitos</th><th style={s.th}>Caução Dev.</th>
+                <th style={s.th}>Saldo</th><th style={s.th}>Status</th><th style={s.th}></th>
+              </tr></thead>
+              <tbody>{acertos.map(a=>(
+                <tr key={a.id}>
+                  <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8"}}>{a.codigo}</span></td>
+                  <td style={{...s.td,color:"#64748b",fontSize:12}}>{a.endereco}</td>
+                  <td style={s.td}>{a.locatario}</td>
+                  <td style={s.td}>{fmtDate(a.dataAcerto)}</td>
+                  <td style={{...s.td,fontFamily:"monospace",color:"#ef4444"}}>{fmt(a.totalDebitos)}</td>
+                  <td style={{...s.td,fontFamily:"monospace",color:"#22c55e"}}>{fmt(a.caucaoDevolvido)}</td>
+                  <td style={{...s.td,fontFamily:"monospace",fontWeight:700,color:Number(a.saldoFinal)>=0?"#22c55e":"#ef4444"}}>{fmt(a.saldoFinal)}</td>
+                  <td style={s.td}><Badge label={a.status}/></td>
+                  <td style={s.td}><div style={{display:"flex",gap:6}}>
+                    {isAdmin&&<><button style={s.btnG} onClick={()=>{setFormAcerto({...a,contratoId:String(a.contratoId)});setModalAcerto(a.id);}}>✎</button>
+                    <button style={{...s.btnG,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteAcertoFinal(a.id);setAcertos(p=>p.filter(x=>x.id!==a.id));}}>✕</button></>}
+                  </div></td>
+                </tr>
+              ))}</tbody></table>}
+            </div>
+          </div>
+        )}
+
       </div>{/* fim main */}
 
       {/* ── MODAIS ── */}
@@ -1027,14 +1099,20 @@ export default function App(){
       {modalContrato&&(
         <Modal title={modalContrato==="new"?"Novo Contrato":"Editar Contrato"} onClose={()=>setModalContrato(null)} wide>
           <ST>Imóvel</ST>
-          <QSelect label="Imóvel *" value={formContrato.imovelId} onChange={v=>setFormContrato(p=>({...p,imovelId:v}))} options={imoveis} getLabel={o=>`${o.codigo} — ${o.endereco}`} onAdd={()=>setQuickImovel(n=>setFormContrato(p=>({...p,imovelId:String(n.id)})))}/>
+          <QSelect label="Imóvel *" value={formContrato.imovelId} onChange={v=>{
+            const im=imoveis.find(x=>x.id===+v);
+            const loc=im?.locadorId?locadores.find(l=>l.id===+im.locadorId):null;
+            setFormContrato(p=>({...p,imovelId:v,
+              locadorId:loc?String(loc.id):p.locadorId,
+              locador:loc?.nome||p.locador,
+              telefoneLocador:loc?.telefone||p.telefoneLocador
+            }));
+          }} options={imoveis} getLabel={o=>`${o.codigo} — ${o.endereco}`} onAdd={()=>setQuickImovel(n=>setFormContrato(p=>({...p,imovelId:String(n.id)})))}/>
           <ST>Partes</ST>
           <R>
-            <QSelect label="Locatário (cadastro)" value={formContrato.locatarioId||""} onChange={v=>{const l=locatarios.find(x=>x.id===+v);setFormContrato(p=>({...p,locatarioId:v,locatario:l?.nome||p.locatario,telefoneLocatario:l?.telefone||p.telefoneLocatario}));}} options={locatarios} getLabel={o=>o.nome} onAdd={()=>setQuickLocatario(n=>{setFormContrato(p=>({...p,locatarioId:String(n.id),locatario:n.nome,telefoneLocatario:n.telefone||p.telefoneLocatario}));})} h/>
-            <QSelect label="Locador (cadastro)" value={formContrato.locadorId||""} onChange={v=>{const l=locadores.find(x=>x.id===+v);setFormContrato(p=>({...p,locadorId:v,locador:l?.nome||p.locador,telefoneLocador:l?.telefone||p.telefoneLocador}));}} options={locadores} getLabel={o=>o.nome} onAdd={()=>setQuickLocador(n=>{setFormContrato(p=>({...p,locadorId:String(n.id),locador:n.nome,telefoneLocador:n.telefone||p.telefoneLocador}));})} h/>
-            <F label="Nome Locatário" h><input style={IS} value={formContrato.locatario||""} onChange={e=>setFormContrato(p=>({...p,locatario:e.target.value}))}/></F>
+            <QSelect label="Locatário *" value={formContrato.locatarioId||""} onChange={v=>{const l=locatarios.find(x=>x.id===+v);setFormContrato(p=>({...p,locatarioId:v,locatario:l?.nome||"",telefoneLocatario:l?.telefone||""}));}} options={locatarios} getLabel={o=>o.nome} onAdd={()=>setQuickLocatario(n=>{setFormContrato(p=>({...p,locatarioId:String(n.id),locatario:n.nome,telefoneLocatario:n.telefone||""}));})} h/>
+            <QSelect label="Locador *" value={formContrato.locadorId||""} onChange={v=>{const l=locadores.find(x=>x.id===+v);setFormContrato(p=>({...p,locadorId:v,locador:l?.nome||"",telefoneLocador:l?.telefone||""}));}} options={locadores} getLabel={o=>o.nome} onAdd={()=>setQuickLocador(n=>{setFormContrato(p=>({...p,locadorId:String(n.id),locador:n.nome,telefoneLocador:n.telefone||""}));})} h/>
             <F label="Tel. Locatário" h><input style={IS} value={formContrato.telefoneLocatario||""} onChange={e=>setFormContrato(p=>({...p,telefoneLocatario:e.target.value}))}/></F>
-            <F label="Nome Locador" h><input style={IS} value={formContrato.locador||""} onChange={e=>setFormContrato(p=>({...p,locador:e.target.value}))}/></F>
             <F label="Tel. Locador" h><input style={IS} value={formContrato.telefoneLocador||""} onChange={e=>setFormContrato(p=>({...p,telefoneLocador:e.target.value}))}/></F>
           </R>
           <ST>Valores</ST>
@@ -1043,6 +1121,30 @@ export default function App(){
             <PF label="Condomínio (R$)" vk="condominio" pk="condominioPagaPor" form={formContrato} set={setFormContrato}/>
             <PF label="IPTU (R$)" vk="iptu" pk="iptuPagaPor" form={formContrato} set={setFormContrato}/>
             <F label="Caução (R$)" h><input style={IS} type="number" value={formContrato.caucao||""} onChange={e=>setFormContrato(p=>({...p,caucao:e.target.value}))}/></F>
+            <F label="Garantia" h>
+              <select style={IS} value={formContrato.garantia||""} onChange={e=>setFormContrato(p=>({...p,garantia:e.target.value}))}>
+                <option value="">Selecione...</option>
+                {garantiaOpts.map(o=><option key={o} value={o}>{o}</option>)}
+              </select>
+            </F>
+            <F label="Gerenciar opções de garantia">
+              <div style={{background:"#0f1623",borderRadius:8,padding:12,border:"1px solid #2d3748"}}>
+                <div style={{display:"flex",gap:6,marginBottom:8}}>
+                  <input style={{...IS,flex:1}} placeholder="Nova opção..." value={novaGarantia} onChange={e=>setNovaGarantia(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&novaGarantia.trim()){saveGarantiaOpts([...garantiaOpts,novaGarantia.trim()]);setNovaGarantia("");}}}/>
+                  <button style={{background:"#6366f1",color:"#fff",border:"none",borderRadius:8,padding:"0 14px",cursor:"pointer",fontWeight:700,fontSize:16,fontFamily:"inherit"}} onClick={()=>{if(novaGarantia.trim()){saveGarantiaOpts([...garantiaOpts,novaGarantia.trim()]);setNovaGarantia("");}}}>+</button>
+                </div>
+                {garantiaOpts.map((o,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                    {editGarantia===i
+                      ? <input style={{...IS,flex:1}} value={o} onChange={e=>{const n=[...garantiaOpts];n[i]=e.target.value;saveGarantiaOpts(n);}} onBlur={()=>setEditGarantia(null)} autoFocus/>
+                      : <span style={{flex:1,fontSize:13,color:"#cbd5e1"}}>{o}</span>
+                    }
+                    <button style={{background:"transparent",border:"1px solid #2d3748",borderRadius:6,color:"#94a3b8",padding:"2px 8px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}} onClick={()=>setEditGarantia(i)}>✎</button>
+                    <button style={{background:"transparent",border:"1px solid #ef444430",borderRadius:6,color:"#ef4444",padding:"2px 8px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}} onClick={()=>{const n=garantiaOpts.filter((_,j)=>j!==i);saveGarantiaOpts(n);if(formContrato.garantia===o)setFormContrato(p=>({...p,garantia:""}));}}>✕</button>
+                  </div>
+                ))}
+              </div>
+            </F>
             <F label="Taxa Adm (%)" h>
               <input style={IS} type="number" value={formContrato.taxaAdmPct} onChange={e=>setFormContrato(p=>({...p,taxaAdmPct:e.target.value}))}/>
               {formContrato.aluguelInicial&&<div style={{fontSize:11,color:"#6366f1",marginTop:3}}>= {fmt((+formContrato.aluguelInicial*+formContrato.taxaAdmPct)/100)}/mês</div>}
@@ -1212,6 +1314,105 @@ export default function App(){
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
             <button style={s.btnG} onClick={()=>setRepasseId(null)}>Cancelar</button>
             <button style={s.btn("#22c55e")} onClick={()=>marcarRepassado(repasseId)}>Confirmar</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* MODAL ACERTO FINAL */}
+      {modalAcerto&&(
+        <Modal title={modalAcerto==="new"?"Novo Acerto Final":"Editar Acerto Final"} onClose={()=>setModalAcerto(null)} wide>
+          <ST>Contrato</ST>
+          <F label="Contrato *">
+            <select style={IS} value={formAcerto.contratoId||""} onChange={e=>{
+              const c=contratos.find(x=>x.id===+e.target.value);
+              setFormAcerto(p=>({...p,contratoId:e.target.value,multaRescisao:c?Number(c.caucao)||0:0,caucaoDevolvido:c?Number(c.caucao)||0:0}));
+            }}>
+              <option value="">Selecione...</option>
+              {contratos.map(c=><option key={c.id} value={c.id}>{c.codigo} — {c.locatario} ({c.status})</option>)}
+            </select>
+          </F>
+          <R>
+            <F label="Data do Acerto" h><input style={IS} type="date" value={formAcerto.dataAcerto||""} onChange={e=>setFormAcerto(p=>({...p,dataAcerto:e.target.value}))}/></F>
+            <F label="Status" h><select style={IS} value={formAcerto.status} onChange={e=>setFormAcerto(p=>({...p,status:e.target.value}))}>{["Pendente","Concluído"].map(t=><option key={t}>{t}</option>)}</select></F>
+          </R>
+
+          <ST>Contas e Débitos do Locatário</ST>
+          {[
+            ["energia","Energia Elétrica"],["agua","Água"],["gas","Gás"],
+            ["condominio","Condomínio"],["iptu","IPTU"],
+          ].map(([k,l])=>(
+            <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1e2940"}}>
+              <span style={{fontSize:13,color:"#cbd5e1"}}>{l}</span>
+              <input style={{...IS,width:150,textAlign:"right"}} type="number" placeholder="0,00" value={formAcerto[k]||0} onChange={e=>setFormAcerto(p=>({...p,[k]:e.target.value}))}/>
+            </div>
+          ))}
+
+          <ST>Serviços de Limpeza e Conservação</ST>
+          {[
+            ["limpezaEstofados","Limpeza de Estofados"],["limpezaArCondicionado","Limpeza de Ar Condicionado"],
+            ["faxina","Faxina Geral"],["pintura","Pintura"],
+            ["reparosHidraulicos","Reparos Hidráulicos"],["reparosEletricos","Reparos Elétricos"],
+            ["vidrosJanelas","Vidros e Janelas"],["chavesFechaduras","Chaves e Fechaduras"],
+          ].map(([k,l])=>(
+            <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1e2940"}}>
+              <span style={{fontSize:13,color:"#cbd5e1"}}>{l}</span>
+              <input style={{...IS,width:150,textAlign:"right"}} type="number" placeholder="0,00" value={formAcerto[k]||0} onChange={e=>setFormAcerto(p=>({...p,[k]:e.target.value}))}/>
+            </div>
+          ))}
+
+          <ST>Penalidades</ST>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1e2940"}}>
+            <span style={{fontSize:13,color:"#cbd5e1"}}>Multa de Rescisão</span>
+            <input style={{...IS,width:150,textAlign:"right"}} type="number" placeholder="0,00" value={formAcerto.multaRescisao||0} onChange={e=>setFormAcerto(p=>({...p,multaRescisao:e.target.value}))}/>
+          </div>
+
+          <ST>Outros</ST>
+          <R>
+            <F label="Descrição" h><input style={IS} placeholder="Ex: Antena, portão..." value={formAcerto.outrosDescricao||""} onChange={e=>setFormAcerto(p=>({...p,outrosDescricao:e.target.value}))}/></F>
+            <F label="Valor (R$)" h><input style={IS} type="number" placeholder="0,00" value={formAcerto.outrosValor||0} onChange={e=>setFormAcerto(p=>({...p,outrosValor:e.target.value}))}/></F>
+          </R>
+
+          <ST>Caução e Saldo Final</ST>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1e2940"}}>
+            <span style={{fontSize:13,color:"#cbd5e1"}}>Caução a Devolver (R$)</span>
+            <input style={{...IS,width:150,textAlign:"right"}} type="number" value={formAcerto.caucaoDevolvido||0} onChange={e=>setFormAcerto(p=>({...p,caucaoDevolvido:e.target.value}))}/>
+          </div>
+
+          {/* Preview do saldo */}
+          {(()=>{
+            const debitos=[formAcerto.energia,formAcerto.agua,formAcerto.gas,formAcerto.condominio,formAcerto.iptu,formAcerto.limpezaEstofados,formAcerto.limpezaArCondicionado,formAcerto.faxina,formAcerto.pintura,formAcerto.reparosHidraulicos,formAcerto.reparosEletricos,formAcerto.vidrosJanelas,formAcerto.chavesFechaduras,formAcerto.multaRescisao,formAcerto.outrosValor].reduce((s,v)=>s+Number(v||0),0);
+            const saldo=Number(formAcerto.caucaoDevolvido||0)-debitos;
+            return(
+              <div style={{background:"#0f1623",borderRadius:10,padding:16,marginTop:14,border:"1px solid #2d3748"}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                  <span style={{color:"#64748b",fontSize:13}}>Total de Débitos</span>
+                  <span style={{fontFamily:"monospace",color:"#ef4444",fontWeight:700}}>{fmt(debitos)}</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                  <span style={{color:"#64748b",fontSize:13}}>Caução</span>
+                  <span style={{fontFamily:"monospace",color:"#22c55e"}}>{fmt(formAcerto.caucaoDevolvido||0)}</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",paddingTop:8,borderTop:"1px solid #2d3748"}}>
+                  <span style={{fontWeight:700,fontSize:14}}>Saldo Final</span>
+                  <span style={{fontFamily:"monospace",fontWeight:800,fontSize:16,color:saldo>=0?"#22c55e":"#ef4444"}}>{fmt(saldo)}</span>
+                </div>
+                <div style={{fontSize:11,color:"#475569",marginTop:6}}>{saldo>=0?"✓ Locatário recebe de volta":"✗ Locatário deve pagar a diferença"}</div>
+              </div>
+            );
+          })()}
+
+          <F label="Observações"><textarea style={{...IS,minHeight:60,marginTop:14}} value={formAcerto.obs||""} onChange={e=>setFormAcerto(p=>({...p,obs:e.target.value}))}/></F>
+
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:12}}>
+            <button style={s.btnG} onClick={()=>setModalAcerto(null)}>Cancelar</button>
+            <button style={s.btn("#ef4444")} onClick={async()=>{
+              if(!formAcerto.contratoId)return showToast("Selecione o contrato","error");
+              try{
+                if(modalAcerto==="new"){const n=await api.createAcertoFinal({...formAcerto,contratoId:+formAcerto.contratoId});setAcertos(p=>[n,...p]);showToast("Acerto registrado!");}
+                else{const n=await api.updateAcertoFinal(modalAcerto,formAcerto);setAcertos(p=>p.map(x=>x.id===modalAcerto?n:x));showToast("Atualizado!");}
+                setModalAcerto(null);
+              }catch(e){showToast(e.message,"error");}
+            }}>Salvar Acerto</button>
           </div>
         </Modal>
       )}
