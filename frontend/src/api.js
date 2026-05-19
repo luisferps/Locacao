@@ -79,4 +79,9 @@ export const api = {
   getDocsRepasse: (id) => req("GET", `/api/repasses/${id}/documentos`),
   uploadDocRepasse: (id, file) => req("POST", `/api/repasses/${id}/documentos`, fd(file, "arquivo"), true),
   getDocRepasseUrl: (id) => req("GET", `/api/repasse-doc/${id}/url`),
+  getAcertoFinal: () => req("GET", "/api/acerto-final"),
+  getAcertoFinalContrato: (id) => req("GET", `/api/contratos/${id}/acerto-final`),
+  createAcertoFinal: (d) => req("POST", "/api/acerto-final", d),
+  updateAcertoFinal: (id, d) => req("PUT", `/api/acerto-final/${id}`, d),
+  deleteAcertoFinal: (id) => req("DELETE", `/api/acerto-final/${id}`),
 };
