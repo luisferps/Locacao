@@ -176,6 +176,48 @@ async function initDb() {
       obs TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS acerto_final (
+      id SERIAL PRIMARY KEY,
+      contrato_id INT REFERENCES contratos(id) ON DELETE CASCADE,
+      data_acerto DATE,
+      status TEXT DEFAULT 'Pendente',
+      energia NUMERIC DEFAULT 0,
+      agua NUMERIC DEFAULT 0,
+      gas NUMERIC DEFAULT 0,
+      condominio NUMERIC DEFAULT 0,
+      iptu NUMERIC DEFAULT 0,
+      limpeza_estofados NUMERIC DEFAULT 0,
+      limpeza_ar_condicionado NUMERIC DEFAULT 0,
+      faxina NUMERIC DEFAULT 0,
+      pintura NUMERIC DEFAULT 0,
+      reparos_hidraulicos NUMERIC DEFAULT 0,
+      reparos_eletricos NUMERIC DEFAULT 0,
+      vidros_janelas NUMERIC DEFAULT 0,
+      chaves_fechaduras NUMERIC DEFAULT 0,
+      multa_rescisao NUMERIC DEFAULT 0,
+      caucao_devolvido NUMERIC DEFAULT 0,
+      outros_descricao TEXT,
+      outros_valor NUMERIC DEFAULT 0,
+      obs TEXT,
+      total_debitos NUMERIC GENERATED ALWAYS AS (
+        COALESCE(energia,0)+COALESCE(agua,0)+COALESCE(gas,0)+COALESCE(condominio,0)+COALESCE(iptu,0)+
+        COALESCE(limpeza_estofados,0)+COALESCE(limpeza_ar_condicionado,0)+COALESCE(faxina,0)+
+        COALESCE(pintura,0)+COALESCE(reparos_hidraulicos,0)+COALESCE(reparos_eletricos,0)+
+        COALESCE(vidros_janelas,0)+COALESCE(chaves_fechaduras,0)+COALESCE(multa_rescisao,0)+
+        COALESCE(outros_valor,0)
+      ) STORED,
+      saldo_final NUMERIC GENERATED ALWAYS AS (
+        COALESCE(caucao_devolvido,0) - (
+          COALESCE(energia,0)+COALESCE(agua,0)+COALESCE(gas,0)+COALESCE(condominio,0)+COALESCE(iptu,0)+
+          COALESCE(limpeza_estofados,0)+COALESCE(limpeza_ar_condicionado,0)+COALESCE(faxina,0)+
+          COALESCE(pintura,0)+COALESCE(reparos_hidraulicos,0)+COALESCE(reparos_eletricos,0)+
+          COALESCE(vidros_janelas,0)+COALESCE(chaves_fechaduras,0)+COALESCE(multa_rescisao,0)+
+          COALESCE(outros_valor,0)
+        )
+      ) STORED,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS documentos_repasse (
       id SERIAL PRIMARY KEY,
       repasse_id INT REFERENCES repasses(id) ON DELETE CASCADE,
@@ -198,7 +240,7 @@ async function initDb() {
     "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS locatario_id INT REFERENCES locatarios(id) ON DELETE SET NULL",
     "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS locador_id INT REFERENCES locadores(id) ON DELETE SET NULL",
     "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS caucao NUMERIC DEFAULT 0",
-    "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS indice_reajuste TEXT DEFAULT 'IGPM'",
+    "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS garantia TEXT",
     "ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS locador_id INT REFERENCES locadores(id) ON DELETE SET NULL",
     "ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS cidade TEXT",
     "ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS estado TEXT",
@@ -493,9 +535,9 @@ app.post("/api/contratos", auth, admin, async (req, res) => {
     const f = req.body;
     const fim = f.inicio && f.duracaoMeses ? (() => { const d = new Date(f.inicio); d.setMonth(d.getMonth() + +f.duracaoMeses); return d.toISOString().split("T")[0]; })() : null;
     const { rows } = await pool.query(
-      `INSERT INTO contratos (imovel_id,locatario_id,locador_id,locatario,telefone_locatario,locador,telefone_locador,aluguel_inicial,aluguel_atual,aluguel_paga_por,condominio,condominio_paga_por,iptu,iptu_paga_por,caucao,taxa_adm_pct,vencimento,forma_pagamento,inicio,duracao_meses,fim,status,multa_rescisao_pct,multa_atraso_pct,juros_atraso_pct,honorarios_pct,honorarios_dias,honorarios_adv_pct,honorarios_adv_dias,indice_reajuste)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING *`,
-      [f.imovelId,f.locatarioId||null,f.locadorId||null,f.locatario,f.telefoneLocatario,f.locador,f.telefoneLocador,+f.aluguelInicial,f.aluguelPagaPor||'Locatário',+f.condominio||0,f.condominioPagaPor||'Locatário',+f.iptu||0,f.iptuPagaPor||'Locatário',+f.caucao||0,+f.taxaAdmPct||10,+f.vencimento,f.formaPagamento||'Pix',f.inicio||null,+f.duracaoMeses||null,fim,f.status||'Ativo',+f.multaRescisaoPct||0,+f.multaAtrasoPct||10,+f.jurosAtrasoPct||1,+f.honorariosPct||10,+f.honorariosDias||10,+f.honorariosAdvPct||20,+f.honorariosAdvDias||20,f.indiceReajuste||'IGPM']
+      `INSERT INTO contratos (imovel_id,locatario_id,locador_id,locatario,telefone_locatario,locador,telefone_locador,aluguel_inicial,aluguel_atual,aluguel_paga_por,condominio,condominio_paga_por,iptu,iptu_paga_por,caucao,taxa_adm_pct,vencimento,forma_pagamento,inicio,duracao_meses,fim,status,multa_rescisao_pct,multa_atraso_pct,juros_atraso_pct,honorarios_pct,honorarios_dias,honorarios_adv_pct,honorarios_adv_dias,indice_reajuste,garantia)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30) RETURNING *`,
+      [f.imovelId,f.locatarioId||null,f.locadorId||null,f.locatario,f.telefoneLocatario,f.locador,f.telefoneLocador,+f.aluguelInicial,f.aluguelPagaPor||'Locatário',+f.condominio||0,f.condominioPagaPor||'Locatário',+f.iptu||0,f.iptuPagaPor||'Locatário',+f.caucao||0,+f.taxaAdmPct||10,+f.vencimento,f.formaPagamento||'Pix',f.inicio||null,+f.duracaoMeses||null,fim,f.status||'Ativo',+f.multaRescisaoPct||0,+f.multaAtrasoPct||10,+f.jurosAtrasoPct||1,+f.honorariosPct||10,+f.honorariosDias||10,+f.honorariosAdvPct||20,+f.honorariosAdvDias||20,f.indiceReajuste||'IGPM',f.garantia||null]
     );
     const contrato = rows[0];
     if (f.inicio && f.duracaoMeses && f.vencimento) {
@@ -516,8 +558,8 @@ app.put("/api/contratos/:id", auth, admin, async (req, res) => {
   const f = req.body;
   const fim = f.inicio && f.duracaoMeses ? (() => { const d = new Date(f.inicio); d.setMonth(d.getMonth() + +f.duracaoMeses); return d.toISOString().split("T")[0]; })() : null;
   const { rows } = await pool.query(
-    `UPDATE contratos SET locatario_id=$1,locador_id=$2,locatario=$3,telefone_locatario=$4,locador=$5,telefone_locador=$6,aluguel_atual=$7,aluguel_paga_por=$8,condominio=$9,condominio_paga_por=$10,iptu=$11,iptu_paga_por=$12,caucao=$13,taxa_adm_pct=$14,vencimento=$15,forma_pagamento=$16,inicio=$17,duracao_meses=$18,fim=$19,status=$20,multa_rescisao_pct=$21,multa_atraso_pct=$22,juros_atraso_pct=$23,honorarios_pct=$24,honorarios_dias=$25,honorarios_adv_pct=$26,honorarios_adv_dias=$27,indice_reajuste=$28 WHERE id=$29 RETURNING *`,
-    [f.locatarioId||null,f.locadorId||null,f.locatario,f.telefoneLocatario,f.locador,f.telefoneLocador,+f.aluguelAtual,f.aluguelPagaPor||'Locatário',+f.condominio||0,f.condominioPagaPor||'Locatário',+f.iptu||0,f.iptuPagaPor||'Locatário',+f.caucao||0,+f.taxaAdmPct||10,+f.vencimento,f.formaPagamento||'Pix',f.inicio||null,+f.duracaoMeses||null,fim,f.status||'Ativo',+f.multaRescisaoPct||0,+f.multaAtrasoPct||10,+f.jurosAtrasoPct||1,+f.honorariosPct||10,+f.honorariosDias||10,+f.honorariosAdvPct||20,+f.honorariosAdvDias||20,f.indiceReajuste||'IGPM',req.params.id]
+    `UPDATE contratos SET locatario_id=$1,locador_id=$2,locatario=$3,telefone_locatario=$4,locador=$5,telefone_locador=$6,aluguel_atual=$7,aluguel_paga_por=$8,condominio=$9,condominio_paga_por=$10,iptu=$11,iptu_paga_por=$12,caucao=$13,taxa_adm_pct=$14,vencimento=$15,forma_pagamento=$16,inicio=$17,duracao_meses=$18,fim=$19,status=$20,multa_rescisao_pct=$21,multa_atraso_pct=$22,juros_atraso_pct=$23,honorarios_pct=$24,honorarios_dias=$25,honorarios_adv_pct=$26,honorarios_adv_dias=$27,indice_reajuste=$28,garantia=$29 WHERE id=$30 RETURNING *`,
+    [f.locatarioId||null,f.locadorId||null,f.locatario,f.telefoneLocatario,f.locador,f.telefoneLocador,+f.aluguelAtual,f.aluguelPagaPor||'Locatário',+f.condominio||0,f.condominioPagaPor||'Locatário',+f.iptu||0,f.iptuPagaPor||'Locatário',+f.caucao||0,+f.taxaAdmPct||10,+f.vencimento,f.formaPagamento||'Pix',f.inicio||null,+f.duracaoMeses||null,fim,f.status||'Ativo',+f.multaRescisaoPct||0,+f.multaAtrasoPct||10,+f.jurosAtrasoPct||1,+f.honorariosPct||10,+f.honorariosDias||10,+f.honorariosAdvPct||20,+f.honorariosAdvDias||20,f.indiceReajuste||'IGPM',f.garantia||null,req.params.id]
   );
   res.json(camelize(rows[0]));
 });
@@ -682,6 +724,37 @@ app.get("/api/dre", auth, async (req, res) => {
     pool.query(`SELECT p.competencia, p.vencimento, p.valor, p.status, i.codigo, c.locatario FROM parcelas p JOIN contratos c ON c.id=p.contrato_id JOIN imoveis i ON i.id=c.imovel_id WHERE p.status='Pendente' AND c.status='Ativo' AND p.vencimento >= CURRENT_DATE ORDER BY p.vencimento ASC LIMIT 60`),
   ]);
   res.json({ receitas: receitas.rows, despesas: despesas.rows, repasses: repasses.rows, previsao: previsao.rows.map(camelize) });
+});
+
+// ACERTO FINAL
+app.get("/api/acerto-final", auth, async (req, res) => {
+  const { rows } = await pool.query(`SELECT a.*,c.locatario,c.locador,i.codigo,i.endereco FROM acerto_final a JOIN contratos c ON c.id=a.contrato_id JOIN imoveis i ON i.id=c.imovel_id ORDER BY a.created_at DESC`);
+  res.json(rows.map(camelize));
+});
+app.get("/api/contratos/:id/acerto-final", auth, async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM acerto_final WHERE contrato_id=$1 ORDER BY created_at DESC", [req.params.id]);
+  res.json(rows.map(camelize));
+});
+app.post("/api/acerto-final", auth, admin, async (req, res) => {
+  const f = req.body;
+  const { rows } = await pool.query(
+    `INSERT INTO acerto_final (contrato_id,data_acerto,status,energia,agua,gas,condominio,iptu,limpeza_estofados,limpeza_ar_condicionado,faxina,pintura,reparos_hidraulicos,reparos_eletricos,vidros_janelas,chaves_fechaduras,multa_rescisao,caucao_devolvido,outros_descricao,outros_valor,obs)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
+    [f.contratoId,f.dataAcerto,f.status||'Pendente',+f.energia||0,+f.agua||0,+f.gas||0,+f.condominio||0,+f.iptu||0,+f.limpezaEstofados||0,+f.limpezaArCondicionado||0,+f.faxina||0,+f.pintura||0,+f.reparosHidraulicos||0,+f.reparosEletricos||0,+f.vidrosJanelas||0,+f.chavesFechaduras||0,+f.multaRescisao||0,+f.caucaoDevolvido||0,f.outrosDescricao||null,+f.outrosValor||0,f.obs||null]
+  );
+  res.json(camelize(rows[0]));
+});
+app.put("/api/acerto-final/:id", auth, admin, async (req, res) => {
+  const f = req.body;
+  const { rows } = await pool.query(
+    `UPDATE acerto_final SET data_acerto=$1,status=$2,energia=$3,agua=$4,gas=$5,condominio=$6,iptu=$7,limpeza_estofados=$8,limpeza_ar_condicionado=$9,faxina=$10,pintura=$11,reparos_hidraulicos=$12,reparos_eletricos=$13,vidros_janelas=$14,chaves_fechaduras=$15,multa_rescisao=$16,caucao_devolvido=$17,outros_descricao=$18,outros_valor=$19,obs=$20 WHERE id=$21 RETURNING *`,
+    [f.dataAcerto,f.status||'Pendente',+f.energia||0,+f.agua||0,+f.gas||0,+f.condominio||0,+f.iptu||0,+f.limpezaEstofados||0,+f.limpezaArCondicionado||0,+f.faxina||0,+f.pintura||0,+f.reparosHidraulicos||0,+f.reparosEletricos||0,+f.vidrosJanelas||0,+f.chavesFechaduras||0,+f.multaRescisao||0,+f.caucaoDevolvido||0,f.outrosDescricao||null,+f.outrosValor||0,f.obs||null,req.params.id]
+  );
+  res.json(camelize(rows[0]));
+});
+app.delete("/api/acerto-final/:id", auth, admin, async (req, res) => {
+  await pool.query("DELETE FROM acerto_final WHERE id=$1", [req.params.id]);
+  res.json({ ok: true });
 });
 
 // DASHBOARD
