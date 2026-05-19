@@ -1217,7 +1217,7 @@ export default function App(){
             <F label="Índice" h><select style={IS} value={formReajuste.indice} onChange={e=>setFormReajuste(p=>({...p,indice:e.target.value}))}>{indiceOpts.map(o=><option key={o}>{o}</option>)}</select></F>
             <F label="Período De" h><input style={IS} type="date" value={formReajuste.periodoInicio||""} onChange={e=>setFormReajuste(p=>({...p,periodoInicio:e.target.value}))}/></F>
             <F label="Período Até" h><input style={IS} type="date" value={formReajuste.periodoFim||""} onChange={e=>setFormReajuste(p=>({...p,periodoFim:e.target.value}))}/></F>
-            <F label="Valor anterior (R$)" h><input style={IS} type="number" value={formReajuste.valorAnterior||""} onChange={e=>{const va=+e.target.value;setFormReajuste(p=>({...p,valorAnterior:e.target.value,valorNovo:(va*(1++p.percentual/100)).toFixed(2)}));}}/></F>
+            <F label="Valor anterior (R$)" h><input style={IS} type="number" value={formReajuste.valorAnterior||""} onChange={e=>{const va=+e.target.value;setFormReajuste(p=>({...p,valorAnterior:e.target.value,valorNovo:(va*(1+(+p.percentual/100))).toFixed(2)}));}}/></F>
             <F label="Percentual (%)" h><input style={IS} type="number" value={formReajuste.percentual||""} onChange={e=>{const pct=+e.target.value;setFormReajuste(p=>({...p,percentual:e.target.value,valorNovo:(+p.valorAnterior*(1+pct/100)).toFixed(2)}));}}/></F>
             <F label="Valor novo (R$) *" h>
               <input style={IS} type="number" value={formReajuste.valorNovo||""} onChange={e=>setFormReajuste(p=>({...p,valorNovo:e.target.value}))}/>
