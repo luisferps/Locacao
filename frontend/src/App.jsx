@@ -1,44 +1,27 @@
-// v3
+// v5
 import { useState, useEffect, useMemo, useRef } from "react";
 import { api } from "./api.js";
 import Auth from "./Auth.jsx";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(v){ return Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
 function fmtDate(d){ return d ? new Date(d+"T12:00:00").toLocaleDateString("pt-BR") : "-"; }
-function numExtenso(n){
-  const u=["","um","dois","três","quatro","cinco","seis","sete","oito","nove","dez","onze","doze","treze","quatorze","quinze","dezesseis","dezessete","dezoito","dezenove"];
-  const d=["","","vinte","trinta","quarenta","cinquenta","sessenta","setenta","oitenta","noventa"];
-  const c=["","cem","duzentos","trezentos","quatrocentos","quinhentos","seiscentos","setecentos","oitocentos","novecentos"];
-  if(!n||n===0) return "zero";
-  n=Math.round(n);
-  if(n<20) return u[n];
-  if(n<100) return d[Math.floor(n/10)]+(n%10?` e ${u[n%10]}`:"");
-  if(n<1000) return (n===100?"cem":c[Math.floor(n/100)])+(n%100?` e ${numExtenso(n%100)}`:"");
-  if(n<1000000){ const m=Math.floor(n/1000); return `${numExtenso(m)} mil${n%1000?` e ${numExtenso(n%1000)}`:""}` }
-  return String(n);
-}
 
-const pagaOpts = ["Locatário","Locador","ADM"];
-const fpOpts = ["Pix","Boleto bancário","Transferência"];
-const indiceOpts = ["IGPM","IPCA","INPC","IPC-A","Manual"];
-const tiposDocPessoa = [["rg","RG"],["cpf","CPF"],["comprovante_renda","Comp. Renda"],["comprovante_endereco","Comp. Endereço"],["outros","Outros"]];
-const tiposDocImovel = [["contrato_adm","Contrato ADM"],["energia","Energia"],["agua","Água"],["gas","Gás"],["condominio","Condomínio"],["iptu","IPTU"],["outros","Outros"]];
+const pagaOpts=["Locatário","Locador","ADM"];
+const fpOpts=["Pix","Boleto bancário","Transferência"];
+const indiceOpts=["IGPM","IPCA","INPC","IPC-A","Manual"];
+const tiposDocImovel=[["contrato_adm","Contrato ADM"],["energia","Energia"],["agua","Água"],["gas","Gás"],["condominio","Condomínio"],["iptu","IPTU"],["outros","Outros"]];
+const tiposDocPessoa=[["rg","RG"],["cpf","CPF"],["comprovante_renda","Comp. Renda"],["comprovante_endereco","Comp. Endereço"],["outros","Outros"]];
+const statusColors={Ativo:"#22c55e",Inativo:"#94a3b8",Encerrado:"#64748b",Pago:"#22c55e",Pendente:"#f59e0b",Atrasado:"#ef4444",Repassado:"#6366f1"};
+const IS={width:"100%",background:"#0f1623",border:"1px solid #2d3748",borderRadius:8,color:"#e2e8f0",padding:"8px 12px",fontSize:14,boxSizing:"border-box",outline:"none",fontFamily:"inherit"};
+const LS={color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4};
 
-const statusColors = {
-  Ativo:"#22c55e",Inativo:"#94a3b8",Encerrado:"#64748b",
-  Pago:"#22c55e",Pendente:"#f59e0b",Atrasado:"#ef4444",
-  Repassado:"#6366f1",Aguardando:"#f59e0b",Entrada:"#22c55e",Saída:"#ef4444"
-};
-
-// ─── UI Components ─────────────────────────────────────────────────────────────
 function Badge({label}){
   return <span style={{background:(statusColors[label]||"#64748b")+"22",color:statusColors[label]||"#64748b",border:`1px solid ${(statusColors[label]||"#64748b")}44`,padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{label}</span>;
 }
 
-function Modal({title,onClose,children,wide}){
+function Modal({title,onClose,children,wide,zIdx}){
   return(
-    <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflowY:"auto"}}>
+    <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:zIdx||1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflowY:"auto"}}>
       <div style={{background:"#1a1f2e",borderRadius:16,padding:28,width:"100%",maxWidth:wide?860:580,border:"1px solid #2d3748",boxShadow:"0 25px 60px #000a",margin:"auto"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
           <h3 style={{color:"#e2e8f0",fontWeight:700,fontSize:18,margin:0}}>{title}</h3>
@@ -50,9 +33,6 @@ function Modal({title,onClose,children,wide}){
   );
 }
 
-const IS = {width:"100%",background:"#0f1623",border:"1px solid #2d3748",borderRadius:8,color:"#e2e8f0",padding:"8px 12px",fontSize:14,boxSizing:"border-box",outline:"none",fontFamily:"inherit"};
-const LS = {color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4};
-
 function F({label,children,h}){return <div style={{marginBottom:14,flex:h?"1 1 45%":"1 1 100%"}}><label style={LS}>{label}</label>{children}</div>;}
 function R({children}){return <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>{children}</div>;}
 function ST({children}){return <div style={{fontSize:11,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:2,margin:"18px 0 10px",paddingBottom:6,borderBottom:"1px solid #1e2940"}}>{children}</div>;}
@@ -63,9 +43,22 @@ function PF({label,vk,pk,form,set}){
       <label style={LS}>{label}</label>
       <div style={{display:"flex",gap:6}}>
         <input style={{...IS,flex:1}} type="number" placeholder="R$" value={form[vk]||""} onChange={e=>set(p=>({...p,[vk]:e.target.value}))}/>
-        <select style={{...IS,width:130}} value={form[pk]||"Locatário"} onChange={e=>set(p=>({...p,[pk]:e.target.value}))}>
-          {pagaOpts.map(o=><option key={o}>{o}</option>)}
+        <select style={{...IS,width:130}} value={form[pk]||"Locatário"} onChange={e=>set(p=>({...p,[pk]:e.target.value}))}>{pagaOpts.map(o=><option key={o}>{o}</option>)}</select>
+      </div>
+    </div>
+  );
+}
+
+function QSelect({label,value,onChange,options,onAdd,h,getLabel}){
+  return(
+    <div style={{marginBottom:14,flex:h?"1 1 45%":"1 1 100%"}}>
+      <label style={LS}>{label}</label>
+      <div style={{display:"flex",gap:6}}>
+        <select style={{...IS,flex:1}} value={value||""} onChange={e=>onChange(e.target.value)}>
+          <option value="">Selecione...</option>
+          {options.map(o=><option key={o.id} value={o.id}>{getLabel?getLabel(o):o.nome||o.codigo}</option>)}
         </select>
+        {onAdd&&<button onClick={onAdd} style={{background:"#6366f120",border:"1px solid #6366f140",color:"#818cf8",borderRadius:8,padding:"0 14px",cursor:"pointer",fontSize:20,fontWeight:700,flexShrink:0}} title="Cadastrar novo">+</button>}
       </div>
     </div>
   );
@@ -96,52 +89,219 @@ function DocUploader({docs,onUpload,onView,onDelete,tipos,isAdmin}){
     <div>
       {isAdmin&&(
         <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"flex-end"}}>
-          <div style={{flex:1,minWidth:150}}>
-            <label style={LS}>Tipo</label>
-            <select style={IS} value={tipo} onChange={e=>setTipo(e.target.value)}>
-              {tipos.map(([v,l])=><option key={v} value={v}>{l}</option>)}
-            </select>
-          </div>
-          <div style={{flex:2,minWidth:200}}>
-            <label style={LS}>Arquivo</label>
-            <input style={IS} type="file" accept=".pdf,image/*" onChange={e=>setFile(e.target.files[0])}/>
-          </div>
+          <div style={{flex:1,minWidth:150}}><label style={LS}>Tipo</label><select style={IS} value={tipo} onChange={e=>setTipo(e.target.value)}>{tipos.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
+          <div style={{flex:2,minWidth:200}}><label style={LS}>Arquivo</label><input style={IS} type="file" accept=".pdf,image/*" onChange={e=>setFile(e.target.files[0])}/></div>
           <button style={{background:"#6366f1",color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13}} onClick={()=>{if(file)onUpload(tipo,file,()=>setFile(null));}}>Enviar</button>
         </div>
       )}
       {docs.length===0?<div style={{color:"#475569",fontSize:13}}>Nenhum documento</div>:
-      <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        {tipos.map(([t,l])=>{
-          const ds=docs.filter(d=>d.tipo===t);
-          if(!ds.length) return null;
-          return(
-            <div key={t}>
-              <div style={{fontSize:11,color:"#6366f1",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>{l}</div>
-              {ds.map(doc=>(
-                <div key={doc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 12px",background:"#0f1623",borderRadius:8,border:"1px solid #2d3748",marginBottom:4}}>
-                  <span style={{fontSize:12,color:"#94a3b8"}}>📄 {doc.nome}</span>
-                  <div style={{display:"flex",gap:6}}>
-                    <button style={{background:"transparent",color:"#94a3b8",border:"1px solid #2d3748",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}} onClick={()=>onView(doc.id)}>Ver</button>
-                    {isAdmin&&<button style={{background:"transparent",color:"#ef4444",border:"1px solid #ef444430",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}} onClick={()=>onDelete(doc.id)}>✕</button>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          );
-        })}
-      </div>}
+      <div>{tipos.map(([t,l])=>{const ds=docs.filter(d=>d.tipo===t);if(!ds.length)return null;return(<div key={t}><div style={{fontSize:11,color:"#6366f1",fontWeight:700,textTransform:"uppercase",marginBottom:4,marginTop:8}}>{l}</div>{ds.map(doc=>(<div key={doc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 12px",background:"#0f1623",borderRadius:8,border:"1px solid #2d3748",marginBottom:4}}><span style={{fontSize:12,color:"#94a3b8"}}>📄 {doc.nome}</span><div style={{display:"flex",gap:6}}><button style={{background:"transparent",color:"#94a3b8",border:"1px solid #2d3748",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}} onClick={()=>onView(doc.id)}>Ver</button>{isAdmin&&<button style={{background:"transparent",color:"#ef4444",border:"1px solid #ef444430",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}} onClick={()=>onDelete(doc.id)}>✕</button>}</div></div>))}</div>);})}</div>}
     </div>
   );
 }
 
-// ─── Main App ──────────────────────────────────────────────────────────────────
+// ── Quick Add Modals ───────────────────────────────────────────────────────────
+function QuickAddLocador({onSave,onClose}){
+  const [f,setF]=useState({nome:"",cpfCnpj:"",telefone:"",email:"",pix:""});
+  const u=p=>setF(x=>({...x,...p}));
+  return(
+    <Modal title="Novo Locador (rápido)" onClose={onClose} zIdx={1100}>
+      <F label="Nome *"><input style={IS} value={f.nome} onChange={e=>u({nome:e.target.value})}/></F>
+      <R>
+        <F label="CPF/CNPJ" h><input style={IS} value={f.cpfCnpj||""} onChange={e=>u({cpfCnpj:e.target.value})}/></F>
+        <F label="Telefone" h><input style={IS} value={f.telefone||""} onChange={e=>u({telefone:e.target.value})}/></F>
+        <F label="Email" h><input style={IS} value={f.email||""} onChange={e=>u({email:e.target.value})}/></F>
+        <F label="PIX" h><input style={IS} value={f.pix||""} onChange={e=>u({pix:e.target.value})}/></F>
+      </R>
+      <div style={{fontSize:12,color:"#475569",marginBottom:14}}>Complete os demais dados depois em Locadores.</div>
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+        <button style={{background:"transparent",color:"#94a3b8",border:"1px solid #2d3748",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontFamily:"inherit",fontWeight:500,fontSize:13}} onClick={onClose}>Cancelar</button>
+        <button style={{background:"#6366f1",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit"}} onClick={()=>f.nome&&onSave(f)}>Salvar</button>
+      </div>
+    </Modal>
+  );
+}
+
+function QuickAddLocatario({onSave,onClose}){
+  const [f,setF]=useState({nome:"",cpf:"",telefone:"",email:"",profissao:""});
+  const u=p=>setF(x=>({...x,...p}));
+  return(
+    <Modal title="Novo Locatário (rápido)" onClose={onClose} zIdx={1100}>
+      <F label="Nome *"><input style={IS} value={f.nome} onChange={e=>u({nome:e.target.value})}/></F>
+      <R>
+        <F label="CPF" h><input style={IS} value={f.cpf||""} onChange={e=>u({cpf:e.target.value})}/></F>
+        <F label="Telefone" h><input style={IS} value={f.telefone||""} onChange={e=>u({telefone:e.target.value})}/></F>
+        <F label="Email" h><input style={IS} value={f.email||""} onChange={e=>u({email:e.target.value})}/></F>
+        <F label="Profissão" h><input style={IS} value={f.profissao||""} onChange={e=>u({profissao:e.target.value})}/></F>
+      </R>
+      <div style={{fontSize:12,color:"#475569",marginBottom:14}}>Complete os demais dados depois em Locatários.</div>
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+        <button style={{background:"transparent",color:"#94a3b8",border:"1px solid #2d3748",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontFamily:"inherit",fontWeight:500,fontSize:13}} onClick={onClose}>Cancelar</button>
+        <button style={{background:"#6366f1",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit"}} onClick={()=>f.nome&&onSave(f)}>Salvar</button>
+      </div>
+    </Modal>
+  );
+}
+
+function QuickAddImovel({locadores,onSave,onClose,onAddLocador}){
+  const [f,setF]=useState({codigo:"",endereco:"",bairro:"",cidade:"Goiânia",estado:"GO",tipo:"Apartamento",locadorId:""});
+  const u=p=>setF(x=>({...x,...p}));
+  return(
+    <Modal title="Novo Imóvel (rápido)" onClose={onClose} zIdx={1100}>
+      <R>
+        <F label="Código *" h><input style={IS} value={f.codigo} onChange={e=>u({codigo:e.target.value})} placeholder="AP-001"/></F>
+        <F label="Tipo" h><select style={IS} value={f.tipo} onChange={e=>u({tipo:e.target.value})}>{["Apartamento","Casa","Comercial","Sala","Galpão"].map(t=><option key={t}>{t}</option>)}</select></F>
+      </R>
+      <F label="Endereço *"><input style={IS} value={f.endereco} onChange={e=>u({endereco:e.target.value})}/></F>
+      <R>
+        <F label="Bairro" h><input style={IS} value={f.bairro||""} onChange={e=>u({bairro:e.target.value})}/></F>
+        <F label="Cidade" h><input style={IS} value={f.cidade||""} onChange={e=>u({cidade:e.target.value})}/></F>
+      </R>
+      <QSelect label="Locador" value={f.locadorId} onChange={v=>u({locadorId:v})} options={locadores} getLabel={o=>o.nome} onAdd={onAddLocador}/>
+      <div style={{fontSize:12,color:"#475569",marginBottom:14}}>Complete os demais dados depois em Imóveis.</div>
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+        <button style={{background:"transparent",color:"#94a3b8",border:"1px solid #2d3748",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontFamily:"inherit",fontWeight:500,fontSize:13}} onClick={onClose}>Cancelar</button>
+        <button style={{background:"#6366f1",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit"}} onClick={()=>(f.codigo&&f.endereco)&&onSave(f)}>Salvar</button>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Detalhe Modal ──────────────────────────────────────────────────────────────
+function DetalheModal({tipo,data,onClose,isAdmin,showToast}){
+  const [docs,setDocs]=useState([]);
+  const [vistorias,setVistorias]=useState([]);
+  const [historico,setHistorico]=useState([]);
+  const [activeTab,setActiveTab]=useState("dados");
+  const [novaV,setNovaV]=useState({tipo:"Entrada",data:"",responsavel:"",observacoes:""});
+  const [novoH,setNovoH]=useState({tipo:"Ocorrência",descricao:"",data:""});
+
+  useEffect(()=>{
+    if(tipo==="locador") api.getDocsPessoa("locador",data.id).then(setDocs).catch(()=>{});
+    if(tipo==="locatario") api.getDocsPessoa("locatario",data.id).then(setDocs).catch(()=>{});
+    if(tipo==="imovel"){
+      api.getDocsImovel(data.id).then(setDocs).catch(()=>{});
+      api.getVistorias(data.id).then(setVistorias).catch(()=>{});
+      api.getHistorico(data.id).then(setHistorico).catch(()=>{});
+    }
+  },[tipo,data.id]);
+
+  const campos={
+    locador:[["Nome",data.nome],["CPF/CNPJ",data.cpfCnpj],["Nacionalidade",data.nacionalidade],["Estado Civil",data.estadoCivil],["Profissão",data.profissao],["RG",`${data.rg||""} ${data.rgOrgao||""}`],["Telefone",data.telefone],["Email",data.email],["Endereço",data.endereco],["Cidade/Estado",`${data.cidade||""} - ${data.estado||""}`],["CEP",data.cep],["Procurador",data.procuradorNome],["CPF Proc.",data.procuradorCpf],["Banco",data.banco],["Ag/Conta",`${data.agencia||""} / ${data.conta||""}`],["PIX",data.pix],["Obs",data.obs]],
+    locatario:[["Nome",data.nome],["CPF",data.cpf],["Nacionalidade",data.nacionalidade],["Estado Civil",data.estadoCivil],["Profissão",data.profissao],["RG",`${data.rg||""} ${data.rgOrgao||""}`],["CNH",data.cnh],["Telefone",data.telefone],["Email",data.email],["Renda",data.renda?fmt(data.renda):"—"],["Endereço",data.endereco],["Cidade/Estado",`${data.cidade||""} - ${data.estado||""}`],["Fiador",data.fiadorNome],["CPF Fiador",data.fiadorCpf],["Obs",data.obs]],
+    imovel:[["Código",data.codigo],["Endereço",data.endereco],["Bairro",data.bairro],["Cidade/Estado",`${data.cidade||""} - ${data.estado||""}`],["Tipo",data.tipo],["Área",data.area?`${data.area}m²`:"—"],["Condomínio",data.nomeCondominio],["Bloco/Apto",`${data.bloco||""} / ${data.apartamento||""}`],["Quartos",data.quartos],["Mobiliado",data.mobiliado],["Valor Ideal",data.valorIdeal?fmt(data.valorIdeal):"—"],["Locador",data.locadorNome],["Locatário Atual",data.locatarioAtual||"Vago"],["Aluguel Atual",data.aluguelAtual?fmt(data.aluguelAtual):"—"],["Vencimento",data.vencimentoAtual?`Dia ${data.vencimentoAtual}`:"—"],["Tel. Portaria",data.telPortaria],["Tel. Síndico",data.telSindico]],
+  }[tipo]||[];
+
+  const tabs=[{id:"dados",label:"Dados"},{id:"docs",label:"Documentos"},...(tipo==="imovel"?[{id:"vistorias",label:"Vistorias"},{id:"historico",label:"Histórico"}]:[])];
+  const tiposDoc=tipo==="imovel"?tiposDocImovel:tiposDocPessoa;
+
+  async function handleUpload(dt,file,cb){
+    try{
+      const doc=tipo==="imovel"?await api.uploadDocImovel(data.id,dt,file):await api.uploadDocPessoa(tipo,data.id,dt,file);
+      setDocs(p=>[...p,doc]);showToast("Enviado!");if(cb)cb();
+    }catch(e){showToast(e.message,"error");}
+  }
+  async function handleView(id){
+    try{const r=tipo==="imovel"?await api.getDocImovelUrl(id):await api.getDocUrl(id);window.open(r.url,"_blank");}
+    catch(e){showToast(e.message,"error");}
+  }
+  async function handleDelete(id){
+    try{tipo==="imovel"?await api.deleteDocImovel(id):await api.deleteDocPessoa(id);setDocs(p=>p.filter(x=>x.id!==id));showToast("Excluído");}
+    catch(e){showToast(e.message,"error");}
+  }
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflowY:"auto"}}>
+      <div style={{background:"#1a1f2e",borderRadius:16,padding:28,width:"100%",maxWidth:720,border:"1px solid #2d3748",boxShadow:"0 25px 60px #000a",margin:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <h3 style={{color:"#e2e8f0",fontWeight:700,fontSize:18,margin:0}}>{tipo==="locador"?"Locador":tipo==="locatario"?"Locatário":"Imóvel"} — {data.nome||data.codigo}</h3>
+          <button onClick={onClose} style={{background:"none",border:"none",color:"#94a3b8",fontSize:22,cursor:"pointer"}}>✕</button>
+        </div>
+        <div style={{display:"flex",gap:4,marginBottom:16,borderBottom:"1px solid #1e2940",paddingBottom:8}}>
+          {tabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} style={{background:activeTab===t.id?"#6366f120":"none",border:"none",borderBottom:activeTab===t.id?"2px solid #6366f1":"2px solid transparent",color:activeTab===t.id?"#818cf8":"#64748b",padding:"6px 14px",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,borderRadius:"6px 6px 0 0"}}>{t.label}</button>)}
+        </div>
+
+        {activeTab==="dados"&&(
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 24px"}}>
+            {campos.map(([k,v])=>(
+              <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #1e2940"}}>
+                <span style={{color:"#64748b",fontSize:13}}>{k}</span>
+                <span style={{fontSize:13,fontWeight:500,textAlign:"right",maxWidth:"55%"}}>{v||"—"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab==="docs"&&(
+          <DocUploader docs={docs} onUpload={handleUpload} onView={handleView} onDelete={handleDelete} tipos={tiposDoc} isAdmin={isAdmin}/>
+        )}
+
+        {activeTab==="vistorias"&&tipo==="imovel"&&(
+          <div>
+            {isAdmin&&(
+              <div style={{background:"#0f1623",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #2d3748"}}>
+                <div style={{fontSize:12,color:"#6366f1",fontWeight:700,marginBottom:10}}>Nova Vistoria</div>
+                <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:120}}><label style={LS}>Tipo</label><select style={IS} value={novaV.tipo} onChange={e=>setNovaV(p=>({...p,tipo:e.target.value}))}>{["Entrada","Saída","Periódica"].map(t=><option key={t}>{t}</option>)}</select></div>
+                  <div style={{flex:1,minWidth:130}}><label style={LS}>Data</label><input style={IS} type="date" value={novaV.data} onChange={e=>setNovaV(p=>({...p,data:e.target.value}))}/></div>
+                  <div style={{flex:2,minWidth:150}}><label style={LS}>Responsável</label><input style={IS} value={novaV.responsavel} onChange={e=>setNovaV(p=>({...p,responsavel:e.target.value}))}/></div>
+                </div>
+                <div style={{marginTop:10}}><label style={LS}>Observações</label><textarea style={{...IS,minHeight:60}} value={novaV.observacoes} onChange={e=>setNovaV(p=>({...p,observacoes:e.target.value}))}/></div>
+                <button style={{background:"#6366f1",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,marginTop:8}} onClick={async()=>{
+                  if(!novaV.data||!novaV.responsavel)return showToast("Preencha data e responsável","error");
+                  try{const v=await api.createVistoria(data.id,novaV);setVistorias(p=>[v,...p]);setNovaV({tipo:"Entrada",data:"",responsavel:"",observacoes:""});showToast("Vistoria registrada!");}
+                  catch(e){showToast(e.message,"error");}
+                }}>Registrar</button>
+              </div>
+            )}
+            {vistorias.length===0?<div style={{color:"#475569",fontSize:13}}>Nenhuma vistoria registrada</div>:
+            vistorias.map(v=>(
+              <div key={v.id} style={{background:"#0f1623",borderRadius:10,padding:14,marginBottom:10,border:"1px solid #2d3748"}}>
+                <div style={{fontWeight:700,color:"#e2e8f0"}}>{v.tipo} <span style={{color:"#64748b",fontSize:12,fontWeight:400}}>· {fmtDate(v.data)} · {v.responsavel}</span></div>
+                {v.observacoes&&<div style={{fontSize:13,color:"#94a3b8",marginTop:6}}>{v.observacoes}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab==="historico"&&tipo==="imovel"&&(
+          <div>
+            {isAdmin&&(
+              <div style={{background:"#0f1623",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #2d3748"}}>
+                <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end"}}>
+                  <div style={{flex:1,minWidth:120}}><label style={LS}>Tipo</label><select style={IS} value={novoH.tipo} onChange={e=>setNovoH(p=>({...p,tipo:e.target.value}))}>{["Ocorrência","Manutenção","Reclamação","Visita","Outros"].map(t=><option key={t}>{t}</option>)}</select></div>
+                  <div style={{flex:1,minWidth:130}}><label style={LS}>Data</label><input style={IS} type="date" value={novoH.data} onChange={e=>setNovoH(p=>({...p,data:e.target.value}))}/></div>
+                  <div style={{flex:3,minWidth:200}}><label style={LS}>Descrição</label><input style={IS} value={novoH.descricao} onChange={e=>setNovoH(p=>({...p,descricao:e.target.value}))}/></div>
+                  <button style={{background:"#6366f1",color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13}} onClick={async()=>{
+                    if(!novoH.descricao||!novoH.data)return showToast("Preencha descrição e data","error");
+                    try{const h=await api.addHistorico(data.id,novoH);setHistorico(p=>[h,...p]);setNovoH({tipo:"Ocorrência",descricao:"",data:""});showToast("Registrado!");}
+                    catch(e){showToast(e.message,"error");}
+                  }}>Adicionar</button>
+                </div>
+              </div>
+            )}
+            {historico.length===0?<div style={{color:"#475569",fontSize:13}}>Nenhum histórico</div>:
+            historico.map(h=>(
+              <div key={h.id} style={{display:"flex",gap:12,padding:"8px 0",borderBottom:"1px solid #1e2940"}}>
+                <div style={{minWidth:80,fontSize:11,color:"#64748b"}}>{fmtDate(h.data)}</div>
+                <div style={{flex:1}}><span style={{fontSize:11,background:"#6366f120",color:"#818cf8",padding:"1px 8px",borderRadius:10,marginRight:6}}>{h.tipo}</span><span style={{fontSize:13}}>{h.descricao}</span></div>
+                <div style={{fontSize:11,color:"#475569"}}>{h.usuarioNome}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ───────────────────────────────────────────────────────────────────
 export default function App(){
   const [tab,setTab]=useState("dashboard");
   const [user,setUser]=useState(()=>{try{return JSON.parse(localStorage.getItem("user"));}catch{return null;}});
   const isAdmin=user?.role==="admin";
   const isInterno=!user?.tipoAcesso||user?.tipoAcesso==="interno";
 
-  // Data state
   const [imoveis,setImoveis]=useState([]);
   const [contratos,setContratos]=useState([]);
   const [locadores,setLocadores]=useState([]);
@@ -150,12 +310,24 @@ export default function App(){
   const [repasses,setRepasses]=useState([]);
   const [usuarios,setUsuarios]=useState([]);
   const [dashboard,setDashboard]=useState(null);
+  const [inadimplencia,setInadimplencia]=useState([]);
   const [loading,setLoading]=useState(true);
   const [toast,setToast]=useState(null);
+  const [dreData,setDreData]=useState(null);
+  const [dreInicio,setDreInicio]=useState("");
+  const [dreFim,setDreFim]=useState("");
+  const [relLocador,setRelLocador]=useState("");
+  const [relMesInicio,setRelMesInicio]=useState("");
+  const [relMesFim,setRelMesFim]=useState("");
+  const [relGerado,setRelGerado]=useState(false);
+  const printRef=useRef(null);
 
-  function showToast(msg,type="ok"){setToast({msg,type});setTimeout(()=>setToast(null),3500);}
+  // Quick-add: valor = callback a executar após salvar
+  const [quickLocador,setQuickLocador]=useState(null);
+  const [quickLocadorForImovel,setQuickLocadorForImovel]=useState(false);
+  const [quickLocatario,setQuickLocatario]=useState(null);
+  const [quickImovel,setQuickImovel]=useState(null);
 
-  // Modal state
   const [modalLocador,setModalLocador]=useState(null);
   const [modalLocatario,setModalLocatario]=useState(null);
   const [modalImovel,setModalImovel]=useState(null);
@@ -164,76 +336,152 @@ export default function App(){
   const [modalReajuste,setModalReajuste]=useState(null);
   const [modalRepasse,setModalRepasse]=useState(null);
   const [modalDespesa,setModalDespesa]=useState(null);
-  const [modalDetalhe,setModalDetalhe]=useState(null); // {tipo, data}
+  const [modalDetalhe,setModalDetalhe]=useState(null);
   const [repasseId,setRepasseId]=useState(null);
   const [comprovanteFile,setComprovanteFile]=useState(null);
-
-  // Parcelas/reajustes detail
   const [parcelas,setParcelas]=useState([]);
   const [reajustes,setReajustes]=useState([]);
   const [parcelaEdit,setParcelaEdit]=useState(null);
   const [contratoFile,setContratoFile]=useState(null);
 
-  // DRE state
-  const [dreInicio,setDreInicio]=useState("");
-  const [dreFim,setDreFim]=useState("");
-  const [dreData,setDreData]=useState(null);
-  const [inadimplencia,setInadimplencia]=useState([]);
-
-  // Forms - all declared before useState
   const emptyLocador={nome:"",cpfCnpj:"",email:"",telefone:"",estadoCivil:"",profissao:"",nacionalidade:"brasileiro(a)",rg:"",rgOrgao:"",endereco:"",bairro:"",cidade:"",estado:"GO",cep:"",procuradorNome:"",procuradorCpf:"",procuradorRg:"",procuradorEndereco:"",banco:"",agencia:"",conta:"",tipoConta:"Corrente",pix:"",obs:""};
   const [formLocador,setFormLocador]=useState(emptyLocador);
-
   const emptyLocatario={nome:"",cpf:"",email:"",telefone:"",estadoCivil:"",profissao:"",nacionalidade:"brasileiro(a)",rg:"",rgOrgao:"",cnh:"",endereco:"",bairro:"",cidade:"",estado:"GO",cep:"",renda:"",fiadorNome:"",fiadorCpf:"",fiadorTelefone:"",obs:""};
   const [formLocatario,setFormLocatario]=useState(emptyLocatario);
-
   const emptyImovel={codigo:"",endereco:"",bairro:"",cidade:"Goiânia",estado:"GO",cep:"",tipo:"Apartamento",area:"",nomeCondominio:"",bloco:"",apartamento:"",quartos:"",mobiliado:"Sem móveis",valorIdeal:"",telPortaria:"",telContabilidade:"",telCobranca:"",telSindico:"",locadorId:""};
   const [formImovel,setFormImovel]=useState(emptyImovel);
-
-  const emptyContrato={imovelId:"",locatarioId:"",locadorId:"",locatario:"",telefoneLocatario:"",locador:"",telefoneLocador:"",aluguelInicial:"",aluguelPagaPor:"Locatário",condominio:"",condominioPagaPor:"Locatário",iptu:"",iptuPagaPor:"Locatário",caucao:"",taxaAdmPct:10,vencimento:"",formaPagamento:"Pix",inicio:"",duracaoMeses:"",status:"Ativo",multaRescisaoPct:0,multaAtrasoPct:10,jurosAtrasoPct:1,honorariosPct:10,honorariosDias:10,honorariosAdvPct:20,honorariosAdvDias:20,indiceReajuste:"IGPM"};
+  const emptyContrato={imovelId:"",locatarioId:"",locadorId:"",locatario:"",telefoneLocatario:"",locador:"",telefoneLocador:"",aluguelInicial:"",aluguelPagaPor:"Locatário",condominio:"",condominioPagaPor:"Locatário",iptu:"",iptuPagaPor:"Locatário",caucao:"",taxaAdmPct:10,vencimento:"",formaPagamento:"Pix",inicio:"",duracaoMeses:"",status:"Ativo",multaAtrasoPct:10,jurosAtrasoPct:1,honorariosPct:10,honorariosDias:10,honorariosAdvPct:20,honorariosAdvDias:20,indiceReajuste:"IGPM"};
   const [formContrato,setFormContrato]=useState(emptyContrato);
-
   const emptyReajuste={dataReajuste:"",indice:"IGPM",periodoInicio:"",periodoFim:"",valorAnterior:"",percentual:"",valorNovo:"",obs:""};
   const [formReajuste,setFormReajuste]=useState(emptyReajuste);
-
   const emptyRepasse={contratoId:"",competencia:"",dataRepasse:"",valorRecebido:"",totalDespesas:"",taxaAdm:"",valorLiquido:"",formaPagamento:"Pix",status:"Pendente",obs:""};
   const [formRepasse,setFormRepasse]=useState(emptyRepasse);
-
-  const emptyDespesa={contratoId:"",data:"",valor:"",tipo:"Manutenção",descricao:"",status:"Pago"};
+  const emptyDespesa={contratoId:"",imovelInfo:"",data:"",valor:"",tipo:"Manutenção",descricao:"",status:"Pago"};
   const [formDespesa,setFormDespesa]=useState(emptyDespesa);
 
-  // Relatorio
-  const [relLocador,setRelLocador]=useState("");
-  const [relMesInicio,setRelMesInicio]=useState("");
-  const [relMesFim,setRelMesFim]=useState("");
-  const [relGerado,setRelGerado]=useState(false);
-  const printRef=useRef(null);
+  function showToast(msg,type="ok"){setToast({msg,type});setTimeout(()=>setToast(null),3500);}
 
-  // Load
   useEffect(()=>{
     if(!user) return;
     const loads=[api.getImoveis(),api.getContratos(),api.getDespesas(),api.getRepasses(),api.getDashboard(),api.getLocadores(),api.getLocatarios()];
     if(isAdmin) loads.push(api.getUsuarios());
     if(isInterno) loads.push(api.getInadimplencia());
-    Promise.all(loads)
-      .then(([im,con,dep,rep,dash,loc,locat,...rest])=>{
-        setImoveis(im);setContratos(con);setDespesas(dep);setRepasses(rep);setDashboard(dash);setLocadores(loc);setLocatarios(locat);
-        let idx=0;
-        if(isAdmin){setUsuarios(rest[idx++]);}
-        if(isInterno){setInadimplencia(rest[idx++]||[]);}
-      })
-      .catch(()=>showToast("Erro ao carregar dados","error"))
-      .finally(()=>setLoading(false));
+    Promise.all(loads).then(([im,con,dep,rep,dash,loc,locat,...rest])=>{
+      setImoveis(im);setContratos(con);setDespesas(dep);setRepasses(rep);setDashboard(dash);setLocadores(loc);setLocatarios(locat);
+      let i=0;if(isAdmin)setUsuarios(rest[i++]);if(isInterno)setInadimplencia(rest[i++]||[]);
+    }).catch(()=>showToast("Erro ao carregar","error")).finally(()=>setLoading(false));
   },[user]);
 
   if(!user) return <Auth onLogin={()=>window.location.reload()}/>;
 
-  // Computed
-  const locadorNome=(id)=>locadores.find(l=>l.id===+id)?.nome||"—";
-  const locatarioNome=(id)=>locatarios.find(l=>l.id===+id)?.nome||"—";
-  const contratoLabel=(id)=>{const c=contratos.find(x=>x.id===+id);return c?`${c.codigo} — ${c.locatario}`:"—";};
+  // Quick-add handlers
+  async function doQuickLocador(form,cb){
+    try{const n=await api.createLocador(form);setLocadores(p=>[...p,n]);showToast("Locador cadastrado!");if(cb)cb(n);}
+    catch(e){showToast(e.message,"error");}
+  }
+  async function doQuickLocatario(form,cb){
+    try{const n=await api.createLocatario(form);setLocatarios(p=>[...p,n]);showToast("Locatário cadastrado!");if(cb)cb(n);}
+    catch(e){showToast(e.message,"error");}
+  }
+  async function doQuickImovel(form,cb){
+    try{const n=await api.createImovel(form);setImoveis(p=>[...p,n]);showToast("Imóvel cadastrado!");if(cb)cb(n);}
+    catch(e){showToast(e.message,"error");}
+  }
 
-  // Styles
+  // CRUD handlers
+  async function saveLocador(){
+    if(!formLocador.nome)return showToast("Nome obrigatório","error");
+    try{
+      if(modalLocador==="new"){const n=await api.createLocador(formLocador);setLocadores(p=>[...p,n]);showToast("Cadastrado!");}
+      else{const n=await api.updateLocador(modalLocador,formLocador);setLocadores(p=>p.map(x=>x.id===modalLocador?n:x));showToast("Atualizado!");}
+      setModalLocador(null);
+    }catch(e){showToast(e.message,"error");}
+  }
+  async function saveLocatario(){
+    if(!formLocatario.nome)return showToast("Nome obrigatório","error");
+    try{
+      if(modalLocatario==="new"){const n=await api.createLocatario(formLocatario);setLocatarios(p=>[...p,n]);showToast("Cadastrado!");}
+      else{const n=await api.updateLocatario(modalLocatario,formLocatario);setLocatarios(p=>p.map(x=>x.id===modalLocatario?n:x));showToast("Atualizado!");}
+      setModalLocatario(null);
+    }catch(e){showToast(e.message,"error");}
+  }
+  async function saveImovel(){
+    if(!formImovel.codigo||!formImovel.endereco)return showToast("Código e endereço obrigatórios","error");
+    try{
+      if(modalImovel==="new"){const n=await api.createImovel(formImovel);setImoveis(p=>[...p,n]);showToast("Cadastrado!");}
+      else{const n=await api.updateImovel(modalImovel,formImovel);setImoveis(p=>p.map(x=>x.id===modalImovel?n:x));showToast("Atualizado!");}
+      setModalImovel(null);
+    }catch(e){showToast(e.message,"error");}
+  }
+  async function saveContrato(){
+    if(!formContrato.imovelId||!formContrato.aluguelInicial)return showToast("Imóvel e aluguel obrigatórios","error");
+    const payload={...formContrato,aluguelInicial:+formContrato.aluguelInicial,condominio:+formContrato.condominio||0,iptu:+formContrato.iptu||0,caucao:+formContrato.caucao||0,taxaAdmPct:+formContrato.taxaAdmPct,vencimento:+formContrato.vencimento,duracaoMeses:+formContrato.duracaoMeses||null};
+    if(formContrato.locatarioId){const l=locatarios.find(x=>x.id===+formContrato.locatarioId);if(l){payload.locatario=l.nome;payload.telefoneLocatario=l.telefone||payload.telefoneLocatario;}}
+    if(formContrato.locadorId){const l=locadores.find(x=>x.id===+formContrato.locadorId);if(l){payload.locador=l.nome;payload.telefoneLocador=l.telefone||payload.telefoneLocador;}}
+    try{
+      if(modalContrato==="new"){const n=await api.createContrato(payload);if(contratoFile)await api.uploadContratoPdf(n.id,contratoFile);setContratos(p=>[n,...p]);showToast("Contrato criado com parcelas!");}
+      else{const n=await api.updateContrato(modalContrato,payload);if(contratoFile)await api.uploadContratoPdf(modalContrato,contratoFile);setContratos(p=>p.map(x=>x.id===modalContrato?n:x));showToast("Atualizado!");}
+      setModalContrato(null);setContratoFile(null);
+    }catch(e){showToast(e.message,"error");}
+  }
+  async function openParcelas(id){
+    try{const[p,r]=await Promise.all([api.getParcelas(id),api.getReajustes(id)]);setParcelas(p);setReajustes(r);setModalParcelas(id);}
+    catch(e){showToast(e.message,"error");}
+  }
+  async function saveParcela(){
+    try{const n=await api.updateParcela(parcelaEdit.id,parcelaEdit);setParcelas(p=>p.map(x=>x.id===parcelaEdit.id?n:x));setParcelaEdit(null);showToast("Atualizado!");}
+    catch(e){showToast(e.message,"error");}
+  }
+  async function saveReajuste(){
+    if(!formReajuste.dataReajuste||!formReajuste.valorNovo)return showToast("Preencha data e valor","error");
+    try{
+      const n=await api.createReajuste(modalReajuste,{...formReajuste,valorAnterior:+formReajuste.valorAnterior,percentual:+formReajuste.percentual,valorNovo:+formReajuste.valorNovo});
+      setReajustes(p=>[n,...p]);setContratos(p=>p.map(c=>c.id===+modalReajuste?{...c,aluguelAtual:+formReajuste.valorNovo}:c));
+      showToast("Reajuste registrado!");setFormReajuste(emptyReajuste);
+    }catch(e){showToast(e.message,"error");}
+  }
+  async function saveDespesa(){
+    if(!formDespesa.contratoId||!formDespesa.data||!formDespesa.valor)return;
+    try{
+      if(modalDespesa==="new"){const n=await api.createDespesa({...formDespesa,valor:+formDespesa.valor,contratoId:+formDespesa.contratoId});setDespesas(p=>[n,...p]);showToast("Registrado!");}
+      else{const n=await api.updateDespesa(modalDespesa,{...formDespesa,valor:+formDespesa.valor,contratoId:+formDespesa.contratoId});setDespesas(p=>p.map(x=>x.id===modalDespesa?n:x));showToast("Atualizado!");}
+      setModalDespesa(null);
+    }catch(e){showToast(e.message,"error");}
+  }
+  function calcRepasse(contratoId){
+    const c=contratos.find(x=>x.id===+contratoId);
+    if(!c)return{};
+    const vb=Number(c.aluguelAtual);
+    const ta=(vb*Number(c.taxaAdmPct))/100;
+    const td=despesas.filter(d=>d.contratoId===+contratoId).reduce((s,d)=>s+Number(d.valor),0);
+    return{valorRecebido:vb.toFixed(2),totalDespesas:td.toFixed(2),taxaAdm:ta.toFixed(2),valorLiquido:(vb-td-ta).toFixed(2)};
+  }
+  async function saveRepasse(){
+    if(!formRepasse.contratoId||!formRepasse.competencia)return;
+    try{
+      const n=await api.createRepasse({...formRepasse,contratoId:+formRepasse.contratoId,valorRecebido:+formRepasse.valorRecebido,totalDespesas:+formRepasse.totalDespesas,taxaAdm:+formRepasse.taxaAdm,valorLiquido:+formRepasse.valorLiquido});
+      if(comprovanteFile)await api.uploadComprovante(n.id,comprovanteFile);
+      setRepasses(p=>[n,...p]);showToast("Repasse gerado!");setModalRepasse(null);setComprovanteFile(null);
+    }catch(e){showToast(e.message,"error");}
+  }
+  async function marcarRepassado(id){
+    if(!comprovanteFile)return showToast("Selecione o comprovante","error");
+    try{
+      await api.uploadComprovante(id,comprovanteFile);
+      setRepasses(p=>p.map(r=>r.id===id?{...r,status:"Repassado"}:r));
+      setComprovanteFile(null);setRepasseId(null);showToast("Repassado!");
+    }catch(e){showToast(e.message,"error");}
+  }
+
+  const locadoresUnicos=[...new Set(contratos.map(c=>c.locador))].sort();
+  const dadosRelatorio=useMemo(()=>{
+    if(!relLocador)return null;
+    return contratos.filter(c=>c.locador===relLocador).map(c=>({c,
+      desps:despesas.filter(d=>d.contratoId===c.id&&((!relMesInicio||(d.data||"").slice(0,7)>=relMesInicio)&&(!relMesFim||(d.data||"").slice(0,7)<=relMesFim))),
+      reps:repasses.filter(r=>r.contratoId===c.id&&((!relMesInicio||(r.dataRepasse||"").slice(0,7)>=relMesInicio)&&(!relMesFim||(r.dataRepasse||"").slice(0,7)<=relMesFim))),
+    })).map(x=>({...x,totalDesp:x.desps.reduce((s,d)=>s+Number(d.valor),0),totalRep:x.reps.reduce((s,r)=>s+Number(r.valorLiquido),0)}));
+  },[relLocador,relMesInicio,relMesFim,contratos,despesas,repasses]);
+
   const s={
     app:{minHeight:"100vh",background:"#0a0e1a",fontFamily:"'DM Sans',sans-serif",color:"#e2e8f0"},
     sidebar:{position:"fixed",top:0,left:0,bottom:0,width:220,background:"#0f1623",borderRight:"1px solid #1e2940",display:"flex",flexDirection:"column",padding:"24px 0",zIndex:100},
@@ -260,128 +508,6 @@ export default function App(){
     ...(isAdmin?[{id:"usuarios",icon:"◎",label:"Usuários"}]:[]),
   ];
 
-  // Handlers
-  async function saveLocador(){
-    if(!formLocador.nome) return showToast("Nome obrigatório","error");
-    try{
-      if(modalLocador==="new"){const n=await api.createLocador(formLocador);setLocadores(p=>[...p,n]);showToast("Locador cadastrado!");}
-      else{const n=await api.updateLocador(modalLocador,formLocador);setLocadores(p=>p.map(x=>x.id===modalLocador?n:x));showToast("Atualizado!");}
-      setModalLocador(null);
-    }catch(e){showToast(e.message,"error");}
-  }
-
-  async function saveLocatario(){
-    if(!formLocatario.nome) return showToast("Nome obrigatório","error");
-    try{
-      if(modalLocatario==="new"){const n=await api.createLocatario(formLocatario);setLocatarios(p=>[...p,n]);showToast("Locatário cadastrado!");}
-      else{const n=await api.updateLocatario(modalLocatario,formLocatario);setLocatarios(p=>p.map(x=>x.id===modalLocatario?n:x));showToast("Atualizado!");}
-      setModalLocatario(null);
-    }catch(e){showToast(e.message,"error");}
-  }
-
-  async function saveImovel(){
-    if(!formImovel.codigo||!formImovel.endereco) return showToast("Código e endereço obrigatórios","error");
-    try{
-      if(modalImovel==="new"){const n=await api.createImovel(formImovel);setImoveis(p=>[...p,n]);showToast("Imóvel cadastrado!");}
-      else{const n=await api.updateImovel(modalImovel,formImovel);setImoveis(p=>p.map(x=>x.id===modalImovel?n:x));showToast("Atualizado!");}
-      setModalImovel(null);
-    }catch(e){showToast(e.message,"error");}
-  }
-
-  async function saveContrato(){
-    if(!formContrato.imovelId||!formContrato.aluguelInicial) return showToast("Imóvel e aluguel obrigatórios","error");
-    const payload={...formContrato,aluguelInicial:+formContrato.aluguelInicial,condominio:+formContrato.condominio||0,iptu:+formContrato.iptu||0,caucao:+formContrato.caucao||0,taxaAdmPct:+formContrato.taxaAdmPct,vencimento:+formContrato.vencimento,duracaoMeses:+formContrato.duracaoMeses||null};
-    // Auto-fill from cadastros
-    if(formContrato.locatarioId){const l=locatarios.find(x=>x.id===+formContrato.locatarioId);if(l){payload.locatario=l.nome;payload.telefoneLocatario=l.telefone;}}
-    if(formContrato.locadorId){const l=locadores.find(x=>x.id===+formContrato.locadorId);if(l){payload.locador=l.nome;payload.telefoneLocador=l.telefone;}}
-    try{
-      if(modalContrato==="new"){const n=await api.createContrato(payload);if(contratoFile)await api.uploadContratoPdf(n.id,contratoFile);setContratos(p=>[n,...p]);showToast("Contrato criado com parcelas!");}
-      else{const n=await api.updateContrato(modalContrato,payload);if(contratoFile)await api.uploadContratoPdf(modalContrato,contratoFile);setContratos(p=>p.map(x=>x.id===modalContrato?n:x));showToast("Atualizado!");}
-      setModalContrato(null);setContratoFile(null);
-    }catch(e){showToast(e.message,"error");}
-  }
-
-  async function openParcelas(contratoId){
-    try{
-      const [p,r]=await Promise.all([api.getParcelas(contratoId),api.getReajustes(contratoId)]);
-      setParcelas(p);setReajustes(r);setModalParcelas(contratoId);
-    }catch(e){showToast(e.message,"error");}
-  }
-
-  async function saveParcela(){
-    try{
-      const n=await api.updateParcela(parcelaEdit.id,parcelaEdit);
-      setParcelas(p=>p.map(x=>x.id===parcelaEdit.id?n:x));
-      setParcelaEdit(null);showToast("Parcela atualizada!");
-    }catch(e){showToast(e.message,"error");}
-  }
-
-  async function saveReajuste(){
-    if(!formReajuste.dataReajuste||!formReajuste.valorNovo) return showToast("Preencha data e valor","error");
-    try{
-      const n=await api.createReajuste(modalReajuste,{...formReajuste,valorAnterior:+formReajuste.valorAnterior,percentual:+formReajuste.percentual,valorNovo:+formReajuste.valorNovo});
-      setReajustes(p=>[n,...p]);
-      setContratos(p=>p.map(c=>c.id===+modalReajuste?{...c,aluguelAtual:+formReajuste.valorNovo}:c));
-      showToast("Reajuste registrado!");setFormReajuste(emptyReajuste);
-    }catch(e){showToast(e.message,"error");}
-  }
-
-  async function saveDespesa(){
-    if(!formDespesa.contratoId||!formDespesa.data||!formDespesa.valor) return;
-    try{
-      if(modalDespesa==="new"){const n=await api.createDespesa({...formDespesa,valor:+formDespesa.valor,contratoId:+formDespesa.contratoId});setDespesas(p=>[n,...p]);showToast("Despesa registrada!");}
-      else{const n=await api.updateDespesa(modalDespesa,{...formDespesa,valor:+formDespesa.valor,contratoId:+formDespesa.contratoId});setDespesas(p=>p.map(x=>x.id===modalDespesa?n:x));showToast("Atualizado!");}
-      setModalDespesa(null);
-    }catch(e){showToast(e.message,"error");}
-  }
-
-  function calcRepasse(contratoId){
-    const c=contratos.find(x=>x.id===+contratoId);
-    if(!c) return {};
-    const vb=Number(c.aluguelAtual);
-    const ta=(vb*Number(c.taxaAdmPct))/100;
-    const td=despesas.filter(d=>d.contratoId===+contratoId).reduce((s,d)=>s+Number(d.valor),0);
-    return{valorRecebido:vb.toFixed(2),totalDespesas:td.toFixed(2),taxaAdm:ta.toFixed(2),valorLiquido:(vb-td-ta).toFixed(2)};
-  }
-
-  async function saveRepasse(){
-    if(!formRepasse.contratoId||!formRepasse.competencia) return;
-    try{
-      const n=await api.createRepasse({...formRepasse,contratoId:+formRepasse.contratoId,valorRecebido:+formRepasse.valorRecebido,totalDespesas:+formRepasse.totalDespesas,taxaAdm:+formRepasse.taxaAdm,valorLiquido:+formRepasse.valorLiquido});
-      if(comprovanteFile)await api.uploadComprovante(n.id,comprovanteFile);
-      setRepasses(p=>[n,...p]);showToast("Repasse gerado!");setModalRepasse(null);setComprovanteFile(null);
-    }catch(e){showToast(e.message,"error");}
-  }
-
-  async function marcarRepassado(id){
-    if(!comprovanteFile) return showToast("Selecione o comprovante","error");
-    try{
-      await api.uploadComprovante(id,comprovanteFile);
-      setRepasses(p=>p.map(r=>r.id===id?{...r,status:"Repassado"}:r));
-      setComprovanteFile(null);setRepasseId(null);showToast("Repassado com sucesso!");
-    }catch(e){showToast(e.message,"error");}
-  }
-
-  async function loadDre(){
-    try{const d=await api.getDre(dreInicio,dreFim);setDreData(d);}
-    catch(e){showToast(e.message,"error");}
-  }
-
-  // Relatório
-  const locadoresUnicos=[...new Set(contratos.map(c=>c.locador))].sort();
-  const dadosRelatorio=useMemo(()=>{
-    if(!relLocador) return null;
-    return contratos.filter(c=>c.locador===relLocador).map(c=>({
-      c,
-      parcs:[],
-      desps:despesas.filter(d=>d.contratoId===c.id&&((!relMesInicio||(d.data||"").slice(0,7)>=relMesInicio)&&(!relMesFim||(d.data||"").slice(0,7)<=relMesFim))),
-      reps:repasses.filter(r=>r.contratoId===c.id&&((!relMesInicio||(r.dataRepasse||"").slice(0,7)>=relMesInicio)&&(!relMesFim||(r.dataRepasse||"").slice(0,7)<=relMesFim))),
-    })).map(x=>({...x,
-      totalDesp:x.desps.reduce((s,d)=>s+Number(d.valor),0),
-      totalRep:x.reps.reduce((s,r)=>s+Number(r.valorLiquido),0),
-    }));
-  },[relLocador,relMesInicio,relMesFim,contratos,despesas,repasses]);
-
   if(loading) return(
     <div style={{...s.app,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
       <div style={{width:40,height:40,border:"3px solid #6366f1",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
@@ -394,6 +520,12 @@ export default function App(){
     <div style={s.app}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');*{box-sizing:border-box}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#0a0e1a}::-webkit-scrollbar-thumb{background:#2d3748;border-radius:3px}table{width:100%;border-collapse:collapse}input,select,textarea{font-family:'DM Sans',sans-serif}select option{background:#1a1f2e}`}</style>
       {toast&&<Toast msg={toast.msg} type={toast.type}/>}
+
+      {/* Quick-add overlays - ficam por cima de tudo */}
+      {quickLocador&&<QuickAddLocador onSave={form=>doQuickLocador(form,n=>{if(typeof quickLocador==="function")quickLocador(n);setQuickLocador(null);})} onClose={()=>setQuickLocador(null)}/>}
+      {quickLocadorForImovel&&<QuickAddLocador onSave={form=>doQuickLocador(form,n=>{setFormImovel(p=>({...p,locadorId:String(n.id)}));setQuickLocadorForImovel(false);})} onClose={()=>setQuickLocadorForImovel(false)}/>}
+      {quickLocatario&&<QuickAddLocatario onSave={form=>doQuickLocatario(form,n=>{if(typeof quickLocatario==="function")quickLocatario(n);setQuickLocatario(null);})} onClose={()=>setQuickLocatario(null)}/>}
+      {quickImovel&&<QuickAddImovel locadores={locadores} onSave={form=>doQuickImovel(form,n=>{if(typeof quickImovel==="function")quickImovel(n);setQuickImovel(null);})} onClose={()=>setQuickImovel(null)} onAddLocador={()=>setQuickLocadorForImovel(true)}/>}
 
       {/* SIDEBAR */}
       <div style={s.sidebar}>
@@ -415,35 +547,21 @@ export default function App(){
         </div>
       </div>
 
-      {/* MAIN */}
       <div style={s.main}>
 
         {/* DASHBOARD */}
         {tab==="dashboard"&&(
           <div>
-            <h2 style={{fontWeight:800,fontSize:22,marginBottom:6}}>Dashboard</h2>
+            <h2 style={{fontWeight:800,fontSize:22,marginBottom:14}}>Dashboard</h2>
             <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
-              {[
-                {label:"Contratos Ativos",value:dashboard?.contratosAtivos||0,color:"#6366f1",fmt:false},
-                {label:"Carteira Mensal",value:dashboard?.carteiraMensal||0,color:"#818cf8",fmt:true},
-                {label:"Recebido (mês)",value:dashboard?.recebidoMes||0,color:"#22c55e",fmt:true},
-                {label:"Despesas (mês)",value:dashboard?.despesasMes||0,color:"#f59e0b",fmt:true},
-                {label:"Repassado (mês)",value:dashboard?.repassadoMes||0,color:"#06b6d4",fmt:true},
-                {label:"Inadimplentes",value:dashboard?.inadimplentesQtd||0,color:"#ef4444",fmt:false,sub:fmt(dashboard?.inadimplentesValor||0)},
-              ].map(m=>(
-                <div key={m.label} style={s.sc}>
-                  <div style={{fontSize:11,color:"#64748b",fontWeight:600,marginBottom:3}}>{m.label}</div>
-                  <div style={{fontFamily:"'DM Mono',monospace",fontSize:17,fontWeight:700,color:m.color}}>{m.fmt?fmt(m.value):m.value}</div>
-                  {m.sub&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>{m.sub}</div>}
-                </div>
+              {[{l:"Contratos Ativos",v:dashboard?.contratosAtivos||0,c:"#6366f1",f:false},{l:"Carteira Mensal",v:dashboard?.carteiraMensal||0,c:"#818cf8",f:true},{l:"Recebido (mês)",v:dashboard?.recebidoMes||0,c:"#22c55e",f:true},{l:"Despesas (mês)",v:dashboard?.despesasMes||0,c:"#f59e0b",f:true},{l:"Repassado (mês)",v:dashboard?.repassadoMes||0,c:"#06b6d4",f:true},{l:"Inadimplentes",v:dashboard?.inadimplentesQtd||0,c:"#ef4444",f:false,sub:fmt(dashboard?.inadimplentesValor||0)}].map(m=>(
+                <div key={m.l} style={s.sc}><div style={{fontSize:11,color:"#64748b",fontWeight:600,marginBottom:3}}>{m.l}</div><div style={{fontFamily:"'DM Mono',monospace",fontSize:17,fontWeight:700,color:m.c}}>{m.f?fmt(m.v):m.v}</div>{m.sub&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>{m.sub}</div>}</div>
               ))}
             </div>
             <div style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:14}}>
               <div style={s.card}><h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700}}>Recebimentos por mês</h3><BarChart data={dashboard?.recPorMes}/></div>
-              <div style={s.card}>
-                <h3 style={{margin:"0 0 10px",fontSize:14,fontWeight:700}}>⚠️ Vencendo em 7 dias</h3>
-                {(dashboard?.vencendo||[]).length===0?<div style={{color:"#475569",fontSize:13}}>Nenhuma parcela vencendo</div>:
-                (dashboard?.vencendo||[]).map(p=>(
+              <div style={s.card}><h3 style={{margin:"0 0 10px",fontSize:14,fontWeight:700}}>⚠️ Vencendo em 7 dias</h3>
+                {(dashboard?.vencendo||[]).length===0?<div style={{color:"#475569",fontSize:13}}>Nenhuma parcela</div>:(dashboard?.vencendo||[]).map(p=>(
                   <div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #1e2940"}}>
                     <div><div style={{fontSize:12,fontWeight:600}}>{p.codigo}</div><div style={{fontSize:11,color:"#64748b"}}>{p.locatario} · {p.competencia}</div></div>
                     <div style={{fontFamily:"monospace",fontSize:12,color:"#f59e0b"}}>{fmt(p.valor)}</div>
@@ -460,17 +578,14 @@ export default function App(){
             <h2 style={{fontWeight:800,fontSize:22,marginBottom:16}}>Controle de Inadimplência</h2>
             <div style={s.card}>
               {inadimplencia.length===0?<div style={{color:"#475569",textAlign:"center",padding:32}}>Nenhuma parcela em atraso! 🎉</div>:
-              <table><thead><tr>
-                <th style={s.th}>Imóvel</th><th style={s.th}>Locatário</th><th style={s.th}>Competência</th><th style={s.th}>Vencimento</th>
-                <th style={s.th}>Dias</th><th style={s.th}>Valor</th><th style={s.th}>Multa</th><th style={s.th}>Juros</th><th style={s.th}>Total</th>
-              </tr></thead>
+              <table><thead><tr><th style={s.th}>Imóvel</th><th style={s.th}>Locatário</th><th style={s.th}>Competência</th><th style={s.th}>Vencimento</th><th style={s.th}>Dias</th><th style={s.th}>Valor</th><th style={s.th}>Multa</th><th style={s.th}>Juros</th><th style={s.th}>Total</th></tr></thead>
               <tbody>{inadimplencia.map(p=>(
                 <tr key={p.id}>
                   <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8"}}>{p.codigo}</span></td>
                   <td style={s.td}>{p.locatario}</td>
                   <td style={s.td}>{p.competencia}</td>
                   <td style={{...s.td,color:"#ef4444"}}>{fmtDate(p.vencimento)}</td>
-                  <td style={{...s.td,color:"#ef4444",fontWeight:700}}>{p.diasAtrasaCalc||p.dias_atraso_calc} dias</td>
+                  <td style={{...s.td,color:"#ef4444",fontWeight:700}}>{p.diasAtrasaCalc||0} dias</td>
                   <td style={{...s.td,fontFamily:"monospace"}}>{fmt(p.valor)}</td>
                   <td style={{...s.td,fontFamily:"monospace",color:"#f59e0b"}}>{fmt(p.valorMulta)}</td>
                   <td style={{...s.td,fontFamily:"monospace",color:"#f59e0b"}}>{fmt(p.valorJuros)}</td>
@@ -490,18 +605,20 @@ export default function App(){
             </div>
             <div style={s.card}>
               <table><thead><tr><th style={s.th}>Nome</th><th style={s.th}>CPF/CNPJ</th><th style={s.th}>Telefone</th><th style={s.th}>Email</th><th style={s.th}>PIX</th><th style={s.th}></th></tr></thead>
-                <tbody>{locadores.map(l=><tr key={l.id}>
-                  <td style={s.td}><span style={{fontWeight:600}}>{l.nome}</span></td>
-                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{l.cpfCnpj||"—"}</td>
-                  <td style={s.td}>{l.telefone||"—"}</td>
-                  <td style={{...s.td,color:"#64748b"}}>{l.email||"—"}</td>
-                  <td style={s.td}>{l.pix||"—"}</td>
-                  <td style={s.td}><div style={{display:"flex",gap:6}}>
-                    <button style={s.btnG} onClick={()=>setModalDetalhe({tipo:"locador",data:l})}>Ver</button>
-                    {isAdmin&&<><button style={s.btnG} onClick={()=>{setFormLocador({...l});setModalLocador(l.id);}}>✎</button>
-                    <button style={{...s.btnG,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteLocador(l.id);setLocadores(p=>p.filter(x=>x.id!==l.id));}}>✕</button></>}
-                  </div></td>
-                </tr>)}</tbody>
+                <tbody>{locadores.map(l=>(
+                  <tr key={l.id}>
+                    <td style={s.td}><span style={{fontWeight:600}}>{l.nome}</span></td>
+                    <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{l.cpfCnpj||"—"}</td>
+                    <td style={s.td}>{l.telefone||"—"}</td>
+                    <td style={{...s.td,color:"#64748b"}}>{l.email||"—"}</td>
+                    <td style={s.td}>{l.pix||"—"}</td>
+                    <td style={s.td}><div style={{display:"flex",gap:6}}>
+                      <button style={s.btnG} onClick={()=>setModalDetalhe({tipo:"locador",data:l})}>Ver</button>
+                      {isAdmin&&<><button style={s.btnG} onClick={()=>{setFormLocador({...l});setModalLocador(l.id);}}>✎</button>
+                      <button style={{...s.btnG,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteLocador(l.id);setLocadores(p=>p.filter(x=>x.id!==l.id));}}>✕</button></>}
+                    </div></td>
+                  </tr>
+                ))}</tbody>
               </table>
             </div>
           </div>
@@ -515,19 +632,25 @@ export default function App(){
               {isAdmin&&<button style={s.btn()} onClick={()=>{setFormLocatario(emptyLocatario);setModalLocatario("new");}}>+ Novo Locatário</button>}
             </div>
             <div style={s.card}>
-              <table><thead><tr><th style={s.th}>Nome</th><th style={s.th}>CPF</th><th style={s.th}>Telefone</th><th style={s.th}>Email</th><th style={s.th}>Profissão</th><th style={s.th}></th></tr></thead>
-                <tbody>{locatarios.map(l=><tr key={l.id}>
-                  <td style={s.td}><span style={{fontWeight:600}}>{l.nome}</span></td>
-                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{l.cpf||"—"}</td>
-                  <td style={s.td}>{l.telefone||"—"}</td>
-                  <td style={{...s.td,color:"#64748b"}}>{l.email||"—"}</td>
-                  <td style={s.td}>{l.profissao||"—"}</td>
-                  <td style={s.td}><div style={{display:"flex",gap:6}}>
-                    <button style={s.btnG} onClick={()=>setModalDetalhe({tipo:"locatario",data:l})}>Ver</button>
-                    {isAdmin&&<><button style={s.btnG} onClick={()=>{setFormLocatario({...l,renda:String(l.renda||"")});setModalLocatario(l.id);}}>✎</button>
-                    <button style={{...s.btnG,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteLocatario(l.id);setLocatarios(p=>p.filter(x=>x.id!==l.id));}}>✕</button></>}
-                  </div></td>
-                </tr>)}</tbody>
+              <table><thead><tr><th style={s.th}>Nome</th><th style={s.th}>CPF</th><th style={s.th}>Telefone</th><th style={s.th}>Email</th><th style={s.th}>Imóvel Atual</th><th style={s.th}></th></tr></thead>
+                <tbody>{locatarios.map(l=>{
+                  const ca=contratos.find(c=>c.locatarioId===l.id&&c.status==="Ativo");
+                  const im=ca?imoveis.find(x=>x.id===ca.imovelId):null;
+                  return(
+                    <tr key={l.id}>
+                      <td style={s.td}><span style={{fontWeight:600}}>{l.nome}</span></td>
+                      <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{l.cpf||"—"}</td>
+                      <td style={s.td}>{l.telefone||"—"}</td>
+                      <td style={{...s.td,color:"#64748b"}}>{l.email||"—"}</td>
+                      <td style={s.td}>{im?<span style={{fontFamily:"monospace",color:"#818cf8"}}>{im.codigo}</span>:<span style={{color:"#475569"}}>—</span>}</td>
+                      <td style={s.td}><div style={{display:"flex",gap:6}}>
+                        <button style={s.btnG} onClick={()=>setModalDetalhe({tipo:"locatario",data:l})}>Ver</button>
+                        {isAdmin&&<><button style={s.btnG} onClick={()=>{setFormLocatario({...l,renda:String(l.renda||"")});setModalLocatario(l.id);}}>✎</button>
+                        <button style={{...s.btnG,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteLocatario(l.id);setLocatarios(p=>p.filter(x=>x.id!==l.id));}}>✕</button></>}
+                      </div></td>
+                    </tr>
+                  );
+                })}</tbody>
               </table>
             </div>
           </div>
@@ -543,23 +666,26 @@ export default function App(){
             <div style={s.card}>
               <table><thead><tr>
                 <th style={s.th}>Código</th><th style={s.th}>Endereço</th><th style={s.th}>Locador</th>
-                <th style={s.th}>Locatário Atual</th><th style={s.th}>Aluguel</th><th style={s.th}>Venc.</th>
-                <th style={s.th}>Status</th><th style={s.th}></th>
+                <th style={s.th}>Locatário Atual</th><th style={s.th}>Aluguel</th><th style={s.th}>Cond.</th>
+                <th style={s.th}>Venc.</th><th style={s.th}>Status</th><th style={s.th}></th>
               </tr></thead>
-                <tbody>{imoveis.map(im=><tr key={im.id}>
-                  <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8",fontWeight:700}}>{im.codigo}</span></td>
-                  <td style={{...s.td,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{im.endereco}</td>
-                  <td style={s.td}>{im.locadorNome||"—"}</td>
-                  <td style={s.td}>{im.locatarioAtual||<span style={{color:"#475569"}}>Vago</span>}</td>
-                  <td style={{...s.td,fontFamily:"monospace",color:"#22c55e",fontSize:12}}>{im.aluguelAtual?fmt(im.aluguelAtual):"—"}</td>
-                  <td style={s.td}>{im.vencimentoAtual?`Dia ${im.vencimentoAtual}`:"—"}</td>
-                  <td style={s.td}><Badge label={im.statusAtual||"Vago"}/></td>
-                  <td style={s.td}><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                    <button style={s.btnG} onClick={()=>setModalDetalhe({tipo:"imovel",data:im})}>Ver</button>
-                    {isAdmin&&<><button style={s.btnG} onClick={()=>{setFormImovel({...im,area:String(im.area||""),quartos:String(im.quartos||""),valorIdeal:String(im.valorIdeal||""),locadorId:String(im.locadorId||"")});setModalImovel(im.id);}}>✎</button>
-                    <button style={{...s.btnG,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteImovel(im.id);setImoveis(p=>p.filter(x=>x.id!==im.id));}}>✕</button></>}
-                  </div></td>
-                </tr>)}</tbody>
+                <tbody>{imoveis.map(im=>(
+                  <tr key={im.id}>
+                    <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8",fontWeight:700}}>{im.codigo}</span></td>
+                    <td style={{...s.td,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{im.endereco}</td>
+                    <td style={s.td}>{im.locadorNome||"—"}</td>
+                    <td style={s.td}>{im.locatarioAtual||<span style={{color:"#475569"}}>Vago</span>}</td>
+                    <td style={{...s.td,fontFamily:"monospace",color:"#22c55e",fontSize:12}}>{im.aluguelAtual?fmt(im.aluguelAtual):"—"}</td>
+                    <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{im.condominioAtual?fmt(im.condominioAtual):"—"}</td>
+                    <td style={s.td}>{im.vencimentoAtual?`Dia ${im.vencimentoAtual}`:"—"}</td>
+                    <td style={s.td}><Badge label={im.statusAtual||"Vago"}/></td>
+                    <td style={s.td}><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                      <button style={s.btnG} onClick={()=>setModalDetalhe({tipo:"imovel",data:im})}>Ver</button>
+                      {isAdmin&&<><button style={s.btnG} onClick={()=>{setFormImovel({...im,area:String(im.area||""),quartos:String(im.quartos||""),valorIdeal:String(im.valorIdeal||""),locadorId:String(im.locadorId||"")});setModalImovel(im.id);}}>✎</button>
+                      <button style={{...s.btnG,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{if(!confirm("Excluir?"))return;await api.deleteImovel(im.id);setImoveis(p=>p.filter(x=>x.id!==im.id));}}>✕</button></>}
+                    </div></td>
+                  </tr>
+                ))}</tbody>
               </table>
             </div>
           </div>
@@ -578,22 +704,24 @@ export default function App(){
                 <th style={s.th}>Al. Inicial</th><th style={s.th}>Al. Atual</th>
                 <th style={s.th}>Início</th><th style={s.th}>Fim</th><th style={s.th}>Status</th><th style={s.th}></th>
               </tr></thead>
-                <tbody>{contratos.map(c=><tr key={c.id}>
-                  <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8",fontWeight:700}}>{c.codigo}</span></td>
-                  <td style={s.td}>{c.locatarioNomeFull||c.locatario}</td>
-                  <td style={s.td}>{c.locadorNomeFull||c.locador}</td>
-                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{fmt(c.aluguelInicial)}</td>
-                  <td style={{...s.td,fontFamily:"monospace",fontSize:12,color:Number(c.aluguelAtual)>Number(c.aluguelInicial)?"#22c55e":"#e2e8f0"}}>{fmt(c.aluguelAtual)}</td>
-                  <td style={s.td}>{fmtDate(c.inicio)}</td>
-                  <td style={{...s.td,fontSize:12,color:c.fim&&new Date(c.fim)<new Date()?"#ef4444":"#64748b"}}>{fmtDate(c.fim)}</td>
-                  <td style={s.td}><Badge label={c.status}/></td>
-                  <td style={s.td}><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                    <button style={s.btnG} onClick={()=>setModalDetalhe({tipo:"contrato",data:c})}>Ver</button>
-                    <button style={{...s.btnG,color:"#818cf8",borderColor:"#6366f130"}} onClick={()=>openParcelas(c.id)}>Parcelas</button>
-                    {isAdmin&&<><button style={{...s.btnG,color:"#f59e0b",borderColor:"#f59e0b30"}} onClick={()=>{setFormReajuste({...emptyReajuste,valorAnterior:c.aluguelAtual});setModalReajuste(c.id);}}>Reajuste</button>
-                    <button style={s.btnG} onClick={()=>{setFormContrato({...c,aluguelInicial:String(c.aluguelInicial),aluguelAtual:String(c.aluguelAtual||c.aluguelInicial),condominio:String(c.condominio||0),iptu:String(c.iptu||0),caucao:String(c.caucao||0),taxaAdmPct:String(c.taxaAdmPct),vencimento:String(c.vencimento),duracaoMeses:String(c.duracaoMeses||""),imovelId:String(c.imovelId),locatarioId:String(c.locatarioId||""),locadorId:String(c.locadorId||"")});setContratoFile(null);setModalContrato(c.id);}}>✎</button></>}
-                  </div></td>
-                </tr>)}</tbody>
+                <tbody>{contratos.map(c=>(
+                  <tr key={c.id}>
+                    <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8",fontWeight:700}}>{c.codigo}</span></td>
+                    <td style={s.td}>{c.locatarioNomeFull||c.locatario}</td>
+                    <td style={s.td}>{c.locadorNomeFull||c.locador}</td>
+                    <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{fmt(c.aluguelInicial)}</td>
+                    <td style={{...s.td,fontFamily:"monospace",fontSize:12,color:Number(c.aluguelAtual)>Number(c.aluguelInicial)?"#22c55e":"#e2e8f0"}}>{fmt(c.aluguelAtual)}</td>
+                    <td style={s.td}>{fmtDate(c.inicio)}</td>
+                    <td style={{...s.td,fontSize:12,color:c.fim&&new Date(c.fim)<new Date()?"#ef4444":"#64748b"}}>{fmtDate(c.fim)}</td>
+                    <td style={s.td}><Badge label={c.status}/></td>
+                    <td style={s.td}><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                      <button style={s.btnG} onClick={()=>setModalDetalhe({tipo:"contrato",data:c})}>Ver</button>
+                      <button style={{...s.btnG,color:"#818cf8",borderColor:"#6366f130"}} onClick={()=>openParcelas(c.id)}>Parcelas</button>
+                      {isAdmin&&<><button style={{...s.btnG,color:"#f59e0b",borderColor:"#f59e0b30"}} onClick={()=>{setFormReajuste({...emptyReajuste,valorAnterior:c.aluguelAtual});setModalReajuste(c.id);}}>Reajuste</button>
+                      <button style={s.btnG} onClick={()=>{setFormContrato({...c,aluguelInicial:String(c.aluguelInicial),aluguelAtual:String(c.aluguelAtual||c.aluguelInicial),condominio:String(c.condominio||0),iptu:String(c.iptu||0),caucao:String(c.caucao||0),taxaAdmPct:String(c.taxaAdmPct),vencimento:String(c.vencimento),duracaoMeses:String(c.duracaoMeses||""),imovelId:String(c.imovelId),locatarioId:String(c.locatarioId||""),locadorId:String(c.locadorId||"")});setContratoFile(null);setModalContrato(c.id);}}>✎</button></>}
+                    </div></td>
+                  </tr>
+                ))}</tbody>
               </table>
             </div>
           </div>
@@ -607,17 +735,26 @@ export default function App(){
               <button style={s.btn("#f59e0b")} onClick={()=>{setFormDespesa(emptyDespesa);setModalDespesa("new");}}>+ Registrar</button>
             </div>
             <div style={s.card}>
-              <table><thead><tr><th style={s.th}>Contrato</th><th style={s.th}>Data</th><th style={s.th}>Tipo</th><th style={s.th}>Descrição</th><th style={s.th}>Valor</th><th style={s.th}>Status</th><th style={s.th}></th></tr></thead>
-                <tbody>{despesas.map(d=><tr key={d.id}>
-                  <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8"}}>{d.codigo}</span></td>
-                  <td style={s.td}>{fmtDate(d.data)}</td><td style={s.td}>{d.tipo}</td><td style={s.td}>{d.descricao}</td>
-                  <td style={{...s.td,fontFamily:"monospace",color:"#f59e0b"}}>{fmt(d.valor)}</td>
-                  <td style={s.td}><Badge label={d.status}/></td>
-                  <td style={s.td}><div style={{display:"flex",gap:6}}>
-                    <button style={s.btnG} onClick={()=>{setFormDespesa({...d,contratoId:String(d.contratoId),valor:String(d.valor)});setModalDespesa(d.id);}}>✎</button>
-                    {isAdmin&&<button style={{...s.btnG,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{await api.deleteDespesa(d.id);setDespesas(p=>p.filter(x=>x.id!==d.id));}}>✕</button>}
-                  </div></td>
-                </tr>)}</tbody>
+              <table><thead><tr><th style={s.th}>Imóvel</th><th style={s.th}>Contrato</th><th style={s.th}>Data</th><th style={s.th}>Tipo</th><th style={s.th}>Descrição</th><th style={s.th}>Valor</th><th style={s.th}>Status</th><th style={s.th}></th></tr></thead>
+                <tbody>{despesas.map(d=>{
+                  const c=contratos.find(x=>x.id===d.contratoId);
+                  const im=c?imoveis.find(x=>x.id===c.imovelId):null;
+                  return(
+                    <tr key={d.id}>
+                      <td style={s.td}>{im?<span style={{fontFamily:"monospace",color:"#818cf8"}}>{im.codigo}</span>:"—"}</td>
+                      <td style={{...s.td,color:"#64748b",fontSize:12}}>{d.locatario||"—"}</td>
+                      <td style={s.td}>{fmtDate(d.data)}</td>
+                      <td style={s.td}>{d.tipo}</td>
+                      <td style={s.td}>{d.descricao}</td>
+                      <td style={{...s.td,fontFamily:"monospace",color:"#f59e0b"}}>{fmt(d.valor)}</td>
+                      <td style={s.td}><Badge label={d.status}/></td>
+                      <td style={s.td}><div style={{display:"flex",gap:6}}>
+                        <button style={s.btnG} onClick={()=>{const c=contratos.find(x=>x.id===d.contratoId);const im=c?imoveis.find(x=>x.id===c.imovelId):null;setFormDespesa({...d,contratoId:String(d.contratoId),valor:String(d.valor),imovelInfo:im?`${im.codigo} — ${im.endereco}`:""});setModalDespesa(d.id);}}>✎</button>
+                        {isAdmin&&<button style={{...s.btnG,color:"#ef4444",borderColor:"#ef444430"}} onClick={async()=>{await api.deleteDespesa(d.id);setDespesas(p=>p.filter(x=>x.id!==d.id));}}>✕</button>}
+                      </div></td>
+                    </tr>
+                  );
+                })}</tbody>
               </table>
             </div>
           </div>
@@ -632,24 +769,26 @@ export default function App(){
             </div>
             <div style={s.card}>
               <table><thead><tr>
-                <th style={s.th}>Contrato</th><th style={s.th}>Competência</th><th style={s.th}>Recebido</th>
-                <th style={s.th}>Despesas</th><th style={s.th}>Taxa</th><th style={s.th}>Líquido</th>
-                <th style={s.th}>Pagamento</th><th style={s.th}>Status</th><th style={s.th}></th>
+                <th style={s.th}>Imóvel</th><th style={s.th}>Locador</th><th style={s.th}>Competência</th>
+                <th style={s.th}>Recebido</th><th style={s.th}>Desp.</th><th style={s.th}>Taxa</th>
+                <th style={s.th}>Líquido</th><th style={s.th}>Status</th><th style={s.th}></th>
               </tr></thead>
-                <tbody>{repasses.map(r=><tr key={r.id}>
-                  <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8"}}>{r.codigo}</span></td>
-                  <td style={s.td}>{r.competencia}</td>
-                  <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{fmt(r.valorRecebido)}</td>
-                  <td style={{...s.td,fontFamily:"monospace",fontSize:12,color:"#f59e0b"}}>{fmt(r.totalDespesas)}</td>
-                  <td style={{...s.td,fontFamily:"monospace",fontSize:12,color:"#f59e0b"}}>{fmt(r.taxaAdm)}</td>
-                  <td style={{...s.td,fontFamily:"monospace",fontWeight:700,color:"#22c55e"}}>{fmt(r.valorLiquido)}</td>
-                  <td style={s.td}>{r.formaPagamento}</td>
-                  <td style={s.td}><Badge label={r.status}/></td>
-                  <td style={s.td}><div style={{display:"flex",gap:6}}>
-                    {r.status!=="Repassado"&&isAdmin&&<button style={s.btn("#22c55e")} onClick={()=>{setRepasseId(r.id);setComprovanteFile(null);}}>✓ Repassar</button>}
-                    {r.comprovanteNome&&<button style={s.btnG} onClick={async()=>{try{const{url}=await api.getComprovanteUrl(r.id);window.open(url,"_blank");}catch(e){showToast(e.message,"error");}}}>Comprovante</button>}
-                  </div></td>
-                </tr>)}</tbody>
+                <tbody>{repasses.map(r=>(
+                  <tr key={r.id}>
+                    <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8"}}>{r.codigo}</span></td>
+                    <td style={s.td}>{r.locador||"—"}</td>
+                    <td style={s.td}>{r.competencia}</td>
+                    <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{fmt(r.valorRecebido)}</td>
+                    <td style={{...s.td,fontFamily:"monospace",fontSize:12,color:"#f59e0b"}}>{fmt(r.totalDespesas)}</td>
+                    <td style={{...s.td,fontFamily:"monospace",fontSize:12,color:"#f59e0b"}}>{fmt(r.taxaAdm)}</td>
+                    <td style={{...s.td,fontFamily:"monospace",fontWeight:700,color:"#22c55e"}}>{fmt(r.valorLiquido)}</td>
+                    <td style={s.td}><Badge label={r.status}/></td>
+                    <td style={s.td}><div style={{display:"flex",gap:6}}>
+                      {r.status!=="Repassado"&&isAdmin&&<button style={s.btn("#22c55e")} onClick={()=>{setRepasseId(r.id);setComprovanteFile(null);}}>✓</button>}
+                      {r.comprovanteNome&&<button style={s.btnG} onClick={async()=>{try{const{url}=await api.getComprovanteUrl(r.id);window.open(url,"_blank");}catch(e){showToast(e.message,"error");}}}>Comp.</button>}
+                    </div></td>
+                  </tr>
+                ))}</tbody>
               </table>
             </div>
           </div>
@@ -660,43 +799,27 @@ export default function App(){
           <div>
             <h2 style={{fontWeight:800,fontSize:22,marginBottom:16}}>DRE e Previsão de Recebimentos</h2>
             <div style={{...s.card,display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap"}}>
-              <div style={{flex:1,minWidth:140}}><label style={LS}>Período De</label><input style={IS} type="date" value={dreInicio} onChange={e=>setDreInicio(e.target.value)}/></div>
-              <div style={{flex:1,minWidth:140}}><label style={LS}>Período Até</label><input style={IS} type="date" value={dreFim} onChange={e=>setDreFim(e.target.value)}/></div>
-              <button style={s.btn()} onClick={loadDre}>Gerar DRE</button>
+              <div style={{flex:1,minWidth:140}}><label style={LS}>De</label><input style={IS} type="date" value={dreInicio} onChange={e=>setDreInicio(e.target.value)}/></div>
+              <div style={{flex:1,minWidth:140}}><label style={LS}>Até</label><input style={IS} type="date" value={dreFim} onChange={e=>setDreFim(e.target.value)}/></div>
+              <button style={s.btn()} onClick={async()=>{try{const d=await api.getDre(dreInicio,dreFim);setDreData(d);}catch(e){showToast(e.message,"error");}}}>Gerar DRE</button>
             </div>
             {dreData&&(
               <div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-                  <div style={s.card}>
-                    <h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700,color:"#22c55e"}}>Receitas por mês</h3>
-                    <table><thead><tr><th style={s.th}>Mês</th><th style={s.th}>Total Recebido</th></tr></thead>
-                      <tbody>{dreData.receitas.map(r=><tr key={r.mes}>
-                        <td style={s.td}>{r.mes}</td>
-                        <td style={{...s.td,fontFamily:"monospace",color:"#22c55e"}}>{fmt(r.total)}</td>
-                      </tr>)}</tbody>
+                  <div style={s.card}><h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700,color:"#22c55e"}}>Receitas por mês</h3>
+                    <table><thead><tr><th style={s.th}>Mês</th><th style={s.th}>Total</th></tr></thead>
+                      <tbody>{dreData.receitas.map(r=><tr key={r.mes}><td style={s.td}>{r.mes}</td><td style={{...s.td,fontFamily:"monospace",color:"#22c55e"}}>{fmt(r.total)}</td></tr>)}</tbody>
                     </table>
                   </div>
-                  <div style={s.card}>
-                    <h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700,color:"#f59e0b"}}>Despesas por tipo</h3>
+                  <div style={s.card}><h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700,color:"#f59e0b"}}>Despesas por tipo</h3>
                     <table><thead><tr><th style={s.th}>Mês</th><th style={s.th}>Tipo</th><th style={s.th}>Total</th></tr></thead>
-                      <tbody>{dreData.despesas.map((d,i)=><tr key={i}>
-                        <td style={s.td}>{d.mes}</td><td style={s.td}>{d.tipo}</td>
-                        <td style={{...s.td,fontFamily:"monospace",color:"#f59e0b"}}>{fmt(d.total)}</td>
-                      </tr>)}</tbody>
+                      <tbody>{dreData.despesas.map((d,i)=><tr key={i}><td style={s.td}>{d.mes}</td><td style={s.td}>{d.tipo}</td><td style={{...s.td,fontFamily:"monospace",color:"#f59e0b"}}>{fmt(d.total)}</td></tr>)}</tbody>
                     </table>
                   </div>
                 </div>
-                <div style={s.card}>
-                  <h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700,color:"#06b6d4"}}>Previsão de Recebimentos (contratos ativos)</h3>
+                <div style={s.card}><h3 style={{margin:"0 0 12px",fontSize:14,fontWeight:700,color:"#06b6d4"}}>Previsão de Recebimentos</h3>
                   <table><thead><tr><th style={s.th}>Imóvel</th><th style={s.th}>Locatário</th><th style={s.th}>Competência</th><th style={s.th}>Vencimento</th><th style={s.th}>Valor</th><th style={s.th}>Status</th></tr></thead>
-                    <tbody>{dreData.previsao.map(p=><tr key={p.id}>
-                      <td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8"}}>{p.codigo}</span></td>
-                      <td style={s.td}>{p.locatario}</td>
-                      <td style={s.td}>{p.competencia}</td>
-                      <td style={s.td}>{fmtDate(p.vencimento)}</td>
-                      <td style={{...s.td,fontFamily:"monospace",color:"#06b6d4"}}>{fmt(p.valor)}</td>
-                      <td style={s.td}><Badge label={p.status}/></td>
-                    </tr>)}</tbody>
+                    <tbody>{dreData.previsao.map(p=><tr key={p.id}><td style={s.td}><span style={{fontFamily:"monospace",color:"#818cf8"}}>{p.codigo}</span></td><td style={s.td}>{p.locatario}</td><td style={s.td}>{p.competencia}</td><td style={s.td}>{fmtDate(p.vencimento)}</td><td style={{...s.td,fontFamily:"monospace",color:"#06b6d4"}}>{fmt(p.valor)}</td><td style={s.td}><Badge label={p.status}/></td></tr>)}</tbody>
                   </table>
                 </div>
               </div>
@@ -708,41 +831,25 @@ export default function App(){
         {tab==="relatorio"&&isInterno&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
-              <h2 style={{fontWeight:800,fontSize:22,margin:0}}>Relatório Financeiro ao Locador</h2>
+              <h2 style={{fontWeight:800,fontSize:22,margin:0}}>Relatório ao Locador</h2>
               {relGerado&&dadosRelatorio?.length>0&&<button style={s.btn()} onClick={()=>{const w=window.open("","_blank");w.document.write(`<html><head><title>Relatório</title><style>body{font-family:sans-serif;padding:32px;color:#1a202c}table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}th{background:#f1f5f9;padding:7px 10px;text-align:left;font-size:11px}td{padding:7px 10px;border-bottom:1px solid #e2e8f0}</style></head><body>${printRef.current?.innerHTML||""}</body></html>`);w.document.close();setTimeout(()=>w.print(),400);}}>⎙ Imprimir</button>}
             </div>
             <div style={{...s.card,display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap"}}>
-              <div style={{flex:2,minWidth:160}}><label style={LS}>Locador</label>
-                <select style={IS} value={relLocador} onChange={e=>{setRelLocador(e.target.value);setRelGerado(false);}}>
-                  <option value="">Selecione...</option>{locadoresUnicos.map(l=><option key={l}>{l}</option>)}
-                </select></div>
+              <div style={{flex:2,minWidth:160}}><label style={LS}>Locador</label><select style={IS} value={relLocador} onChange={e=>{setRelLocador(e.target.value);setRelGerado(false);}}><option value="">Selecione...</option>{locadoresUnicos.map(l=><option key={l}>{l}</option>)}</select></div>
               <div style={{flex:1,minWidth:130}}><label style={LS}>De</label><input style={IS} type="month" value={relMesInicio} onChange={e=>setRelMesInicio(e.target.value)}/></div>
               <div style={{flex:1,minWidth:130}}><label style={LS}>Até</label><input style={IS} type="month" value={relMesFim} onChange={e=>setRelMesFim(e.target.value)}/></div>
               <button style={{...s.btn(),opacity:relLocador?1:0.4}} disabled={!relLocador} onClick={()=>setRelGerado(true)}>Gerar</button>
             </div>
             {relGerado&&dadosRelatorio&&(
               <div ref={printRef}>
-                <div style={{...s.card,borderLeft:"4px solid #6366f1"}}>
-                  <div style={{fontSize:11,color:"#6366f1",fontWeight:700,letterSpacing:2,textTransform:"uppercase"}}>Relatório Financeiro ao Locador</div>
-                  <div style={{fontSize:20,fontWeight:800,marginTop:4}}>{relLocador}</div>
-                  <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{relMesInicio||relMesFim?`${relMesInicio||"início"} até ${relMesFim||"fim"}`:"Todos os registros"} · {new Date().toLocaleDateString("pt-BR")}</div>
-                </div>
+                <div style={{...s.card,borderLeft:"4px solid #6366f1"}}><div style={{fontSize:11,color:"#6366f1",fontWeight:700,letterSpacing:2,textTransform:"uppercase"}}>Relatório Financeiro ao Locador</div><div style={{fontSize:20,fontWeight:800,marginTop:4}}>{relLocador}</div><div style={{fontSize:12,color:"#64748b",marginTop:2}}>{relMesInicio||relMesFim?`${relMesInicio||"início"} até ${relMesFim||"fim"}`:"Todos os registros"} · {new Date().toLocaleDateString("pt-BR")}</div></div>
                 {dadosRelatorio.map(({c,desps,reps,totalDesp,totalRep})=>(
                   <div key={c.id} style={s.card}>
                     <div style={{fontWeight:700,marginBottom:4}}>{c.codigo} — {c.endereco}</div>
-                    <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Locatário: {c.locatarioNomeFull||c.locatario} · Aluguel atual: {fmt(c.aluguelAtual)}</div>
-                    {desps.length>0&&<><div style={{fontSize:11,fontWeight:700,color:"#f59e0b",textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Despesas</div>
-                    <table><thead><tr><th style={s.th}>Data</th><th style={s.th}>Tipo</th><th style={s.th}>Descrição</th><th style={s.th}>Valor</th></tr></thead>
-                      <tbody>{desps.map(d=><tr key={d.id}><td style={s.td}>{fmtDate(d.data)}</td><td style={s.td}>{d.tipo}</td><td style={s.td}>{d.descricao}</td><td style={{...s.td,fontFamily:"monospace"}}>{fmt(d.valor)}</td></tr>)}</tbody>
-                    </table></>}
-                    {reps.length>0&&<><div style={{fontSize:11,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:1,margin:"12px 0 6px"}}>Repasses</div>
-                    <table><thead><tr><th style={s.th}>Competência</th><th style={s.th}>Recebido</th><th style={s.th}>Despesas</th><th style={s.th}>Taxa</th><th style={s.th}>Líquido</th><th style={s.th}>Pagamento</th></tr></thead>
-                      <tbody>{reps.map(r=><tr key={r.id}><td style={s.td}>{r.competencia}</td><td style={{...s.td,fontFamily:"monospace"}}>{fmt(r.valorRecebido)}</td><td style={{...s.td,fontFamily:"monospace"}}>{fmt(r.totalDespesas)}</td><td style={{...s.td,fontFamily:"monospace"}}>{fmt(r.taxaAdm)}</td><td style={{...s.td,fontFamily:"monospace",fontWeight:700,color:"#22c55e"}}>{fmt(r.valorLiquido)}</td><td style={s.td}>{r.formaPagamento}</td></tr>)}</tbody>
-                    </table></>}
-                    <div style={{background:"#0f1623",borderRadius:8,padding:12,marginTop:8,display:"flex",gap:24}}>
-                      <div><div style={{fontSize:11,color:"#64748b"}}>Total despesas</div><div style={{fontFamily:"monospace",color:"#f59e0b",fontWeight:700}}>{fmt(totalDesp)}</div></div>
-                      <div><div style={{fontSize:11,color:"#64748b"}}>Total repassado</div><div style={{fontFamily:"monospace",color:"#22c55e",fontWeight:700,fontSize:16}}>{fmt(totalRep)}</div></div>
-                    </div>
+                    <div style={{fontSize:12,color:"#64748b",marginBottom:10}}>Locatário: {c.locatarioNomeFull||c.locatario} · Aluguel: {fmt(c.aluguelAtual)}</div>
+                    {desps.length>0&&<><div style={{fontSize:11,fontWeight:700,color:"#f59e0b",textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Despesas</div><table><thead><tr><th style={s.th}>Data</th><th style={s.th}>Tipo</th><th style={s.th}>Descrição</th><th style={s.th}>Valor</th></tr></thead><tbody>{desps.map(d=><tr key={d.id}><td style={s.td}>{fmtDate(d.data)}</td><td style={s.td}>{d.tipo}</td><td style={s.td}>{d.descricao}</td><td style={{...s.td,fontFamily:"monospace"}}>{fmt(d.valor)}</td></tr>)}</tbody></table></>}
+                    {reps.length>0&&<><div style={{fontSize:11,fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:1,margin:"10px 0 6px"}}>Repasses</div><table><thead><tr><th style={s.th}>Competência</th><th style={s.th}>Recebido</th><th style={s.th}>Despesas</th><th style={s.th}>Taxa</th><th style={s.th}>Líquido</th></tr></thead><tbody>{reps.map(r=><tr key={r.id}><td style={s.td}>{r.competencia}</td><td style={{...s.td,fontFamily:"monospace"}}>{fmt(r.valorRecebido)}</td><td style={{...s.td,fontFamily:"monospace"}}>{fmt(r.totalDespesas)}</td><td style={{...s.td,fontFamily:"monospace"}}>{fmt(r.taxaAdm)}</td><td style={{...s.td,fontFamily:"monospace",fontWeight:700,color:"#22c55e"}}>{fmt(r.valorLiquido)}</td></tr>)}</tbody></table></>}
+                    <div style={{background:"#0f1623",borderRadius:8,padding:12,marginTop:8,display:"flex",gap:24}}><div><div style={{fontSize:11,color:"#64748b"}}>Total despesas</div><div style={{fontFamily:"monospace",color:"#f59e0b",fontWeight:700}}>{fmt(totalDesp)}</div></div><div><div style={{fontSize:11,color:"#64748b"}}>Total repassado</div><div style={{fontFamily:"monospace",color:"#22c55e",fontWeight:700,fontSize:16}}>{fmt(totalRep)}</div></div></div>
                   </div>
                 ))}
               </div>
@@ -762,20 +869,19 @@ export default function App(){
                     <div><div style={{fontSize:14,fontWeight:600}}>{u.nome}</div><div style={{fontSize:12,color:"#64748b"}}>{u.email} · {u.tipoAcesso}</div></div>
                     <div style={{display:"flex",gap:8}}>
                       <button style={s.btn("#22c55e")} onClick={async()=>{const up=await api.updateUsuario(u.id,{nome:u.nome,role:u.role,ativo:true,aprovado:true});setUsuarios(p=>p.map(x=>x.id===u.id?up:x));showToast("Aprovado!");}}>✓ Aprovar</button>
-                      <button style={s.btn("#ef4444")} onClick={async()=>{if(!confirm("Rejeitar?"))return;await api.deleteUsuario(u.id);setUsuarios(p=>p.filter(x=>x.id!==u.id));showToast("Rejeitado");}}>✕</button>
+                      <button style={s.btn("#ef4444")} onClick={async()=>{if(!confirm("Rejeitar?"))return;await api.deleteUsuario(u.id);setUsuarios(p=>p.filter(x=>x.id!==u.id));}}>✕</button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
             <div style={s.card}>
-              <table><thead><tr><th style={s.th}>Nome</th><th style={s.th}>Email</th><th style={s.th}>Tipo</th><th style={s.th}>Perfil</th><th style={s.th}>Status</th><th style={s.th}></th></tr></thead>
+              <table><thead><tr><th style={s.th}>Nome</th><th style={s.th}>Email</th><th style={s.th}>Tipo</th><th style={s.th}>Perfil</th><th style={s.th}></th></tr></thead>
                 <tbody>{usuarios.filter(u=>u.aprovado).map(u=>(
                   <tr key={u.id}>
                     <td style={s.td}>{u.nome}</td><td style={{...s.td,color:"#64748b"}}>{u.email}</td>
                     <td style={s.td}><span style={{fontSize:12,color:"#94a3b8"}}>{u.tipoAcesso}</span></td>
                     <td style={s.td}><span style={{background:u.role==="admin"?"#6366f120":"#1e2940",color:u.role==="admin"?"#818cf8":"#64748b",border:`1px solid ${u.role==="admin"?"#6366f140":"#2d3748"}`,padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{u.role==="admin"?"Admin":"Usuário"}</span></td>
-                    <td style={s.td}><Badge label={u.ativo?"Ativo":"Inativo"}/></td>
                     <td style={s.td}>{u.id!==user.id&&<div style={{display:"flex",gap:6}}>
                       <button style={s.btnG} onClick={async()=>{const up=await api.updateUsuario(u.id,{nome:u.nome,role:u.role==="admin"?"usuario":"admin",ativo:u.ativo,aprovado:u.aprovado});setUsuarios(p=>p.map(x=>x.id===u.id?up:x));}}>{u.role==="admin"?"→ Usuário":"→ Admin"}</button>
                       <button style={s.btnG} onClick={async()=>{const up=await api.updateUsuario(u.id,{nome:u.nome,role:u.role,ativo:!u.ativo,aprovado:u.aprovado});setUsuarios(p=>p.map(x=>x.id===u.id?up:x));}}>{u.ativo?"Desativar":"Ativar"}</button>
@@ -786,7 +892,8 @@ export default function App(){
             </div>
           </div>
         )}
-      </div>
+
+      </div>{/* fim main */}
 
       {/* ── MODAIS ── */}
 
@@ -795,30 +902,30 @@ export default function App(){
         <Modal title={modalLocador==="new"?"Novo Locador":"Editar Locador"} onClose={()=>setModalLocador(null)} wide>
           <ST>Dados Pessoais</ST>
           <R>
-            <F label="Nome completo *" h><input style={IS} value={formLocador.nome} onChange={e=>setFormLocador(p=>({...p,nome:e.target.value}))}/></F>
-            <F label="CPF / CNPJ" h><input style={IS} value={formLocador.cpfCnpj||""} onChange={e=>setFormLocador(p=>({...p,cpfCnpj:e.target.value}))}/></F>
+            <F label="Nome *" h><input style={IS} value={formLocador.nome} onChange={e=>setFormLocador(p=>({...p,nome:e.target.value}))}/></F>
+            <F label="CPF/CNPJ" h><input style={IS} value={formLocador.cpfCnpj||""} onChange={e=>setFormLocador(p=>({...p,cpfCnpj:e.target.value}))}/></F>
             <F label="Nacionalidade" h><input style={IS} value={formLocador.nacionalidade||""} onChange={e=>setFormLocador(p=>({...p,nacionalidade:e.target.value}))}/></F>
             <F label="Estado Civil" h><select style={IS} value={formLocador.estadoCivil||""} onChange={e=>setFormLocador(p=>({...p,estadoCivil:e.target.value}))}><option value="">Selecione</option>{["Solteiro(a)","Casado(a)","Divorciado(a)","Viúvo(a)","União Estável"].map(o=><option key={o}>{o}</option>)}</select></F>
             <F label="Profissão" h><input style={IS} value={formLocador.profissao||""} onChange={e=>setFormLocador(p=>({...p,profissao:e.target.value}))}/></F>
             <F label="RG" h><input style={IS} value={formLocador.rg||""} onChange={e=>setFormLocador(p=>({...p,rg:e.target.value}))}/></F>
-            <F label="Órgão Emissor" h><input style={IS} value={formLocador.rgOrgao||""} onChange={e=>setFormLocador(p=>({...p,rgOrgao:e.target.value}))}/></F>
+            <F label="Órgão" h><input style={IS} value={formLocador.rgOrgao||""} onChange={e=>setFormLocador(p=>({...p,rgOrgao:e.target.value}))}/></F>
             <F label="Telefone" h><input style={IS} value={formLocador.telefone||""} onChange={e=>setFormLocador(p=>({...p,telefone:e.target.value}))}/></F>
             <F label="Email" h><input style={IS} type="email" value={formLocador.email||""} onChange={e=>setFormLocador(p=>({...p,email:e.target.value}))}/></F>
           </R>
           <ST>Endereço</ST>
-          <F label="Endereço completo"><input style={IS} value={formLocador.endereco||""} onChange={e=>setFormLocador(p=>({...p,endereco:e.target.value}))}/></F>
+          <F label="Endereço"><input style={IS} value={formLocador.endereco||""} onChange={e=>setFormLocador(p=>({...p,endereco:e.target.value}))}/></F>
           <R>
             <F label="Bairro" h><input style={IS} value={formLocador.bairro||""} onChange={e=>setFormLocador(p=>({...p,bairro:e.target.value}))}/></F>
             <F label="Cidade" h><input style={IS} value={formLocador.cidade||""} onChange={e=>setFormLocador(p=>({...p,cidade:e.target.value}))}/></F>
             <F label="Estado" h><input style={IS} value={formLocador.estado||""} onChange={e=>setFormLocador(p=>({...p,estado:e.target.value}))}/></F>
             <F label="CEP" h><input style={IS} value={formLocador.cep||""} onChange={e=>setFormLocador(p=>({...p,cep:e.target.value}))}/></F>
           </R>
-          <ST>Procurador (se houver)</ST>
+          <ST>Procurador</ST>
           <R>
-            <F label="Nome do Procurador" h><input style={IS} value={formLocador.procuradorNome||""} onChange={e=>setFormLocador(p=>({...p,procuradorNome:e.target.value}))}/></F>
-            <F label="CPF do Procurador" h><input style={IS} value={formLocador.procuradorCpf||""} onChange={e=>setFormLocador(p=>({...p,procuradorCpf:e.target.value}))}/></F>
-            <F label="RG do Procurador" h><input style={IS} value={formLocador.procuradorRg||""} onChange={e=>setFormLocador(p=>({...p,procuradorRg:e.target.value}))}/></F>
-            <F label="Endereço do Procurador" h><input style={IS} value={formLocador.procuradorEndereco||""} onChange={e=>setFormLocador(p=>({...p,procuradorEndereco:e.target.value}))}/></F>
+            <F label="Nome" h><input style={IS} value={formLocador.procuradorNome||""} onChange={e=>setFormLocador(p=>({...p,procuradorNome:e.target.value}))}/></F>
+            <F label="CPF" h><input style={IS} value={formLocador.procuradorCpf||""} onChange={e=>setFormLocador(p=>({...p,procuradorCpf:e.target.value}))}/></F>
+            <F label="RG" h><input style={IS} value={formLocador.procuradorRg||""} onChange={e=>setFormLocador(p=>({...p,procuradorRg:e.target.value}))}/></F>
+            <F label="Endereço" h><input style={IS} value={formLocador.procuradorEndereco||""} onChange={e=>setFormLocador(p=>({...p,procuradorEndereco:e.target.value}))}/></F>
           </R>
           <ST>Dados Bancários</ST>
           <R>
@@ -828,7 +935,7 @@ export default function App(){
             <F label="Tipo" h><select style={IS} value={formLocador.tipoConta||"Corrente"} onChange={e=>setFormLocador(p=>({...p,tipoConta:e.target.value}))}>{["Corrente","Poupança"].map(o=><option key={o}>{o}</option>)}</select></F>
             <F label="PIX" h><input style={IS} value={formLocador.pix||""} onChange={e=>setFormLocador(p=>({...p,pix:e.target.value}))}/></F>
           </R>
-          <F label="Observações"><textarea style={{...IS,minHeight:60}} value={formLocador.obs||""} onChange={e=>setFormLocador(p=>({...p,obs:e.target.value}))}/></F>
+          <F label="Obs"><textarea style={{...IS,minHeight:50}} value={formLocador.obs||""} onChange={e=>setFormLocador(p=>({...p,obs:e.target.value}))}/></F>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:12}}>
             <button style={s.btnG} onClick={()=>setModalLocador(null)}>Cancelar</button>
             <button style={s.btn()} onClick={saveLocador}>Salvar</button>
@@ -841,33 +948,33 @@ export default function App(){
         <Modal title={modalLocatario==="new"?"Novo Locatário":"Editar Locatário"} onClose={()=>setModalLocatario(null)} wide>
           <ST>Dados Pessoais</ST>
           <R>
-            <F label="Nome completo *" h><input style={IS} value={formLocatario.nome} onChange={e=>setFormLocatario(p=>({...p,nome:e.target.value}))}/></F>
+            <F label="Nome *" h><input style={IS} value={formLocatario.nome} onChange={e=>setFormLocatario(p=>({...p,nome:e.target.value}))}/></F>
             <F label="CPF" h><input style={IS} value={formLocatario.cpf||""} onChange={e=>setFormLocatario(p=>({...p,cpf:e.target.value}))}/></F>
             <F label="Nacionalidade" h><input style={IS} value={formLocatario.nacionalidade||""} onChange={e=>setFormLocatario(p=>({...p,nacionalidade:e.target.value}))}/></F>
             <F label="Estado Civil" h><select style={IS} value={formLocatario.estadoCivil||""} onChange={e=>setFormLocatario(p=>({...p,estadoCivil:e.target.value}))}><option value="">Selecione</option>{["Solteiro(a)","Casado(a)","Divorciado(a)","Viúvo(a)","União Estável"].map(o=><option key={o}>{o}</option>)}</select></F>
             <F label="Profissão" h><input style={IS} value={formLocatario.profissao||""} onChange={e=>setFormLocatario(p=>({...p,profissao:e.target.value}))}/></F>
             <F label="RG" h><input style={IS} value={formLocatario.rg||""} onChange={e=>setFormLocatario(p=>({...p,rg:e.target.value}))}/></F>
-            <F label="Órgão Emissor" h><input style={IS} value={formLocatario.rgOrgao||""} onChange={e=>setFormLocatario(p=>({...p,rgOrgao:e.target.value}))}/></F>
+            <F label="Órgão" h><input style={IS} value={formLocatario.rgOrgao||""} onChange={e=>setFormLocatario(p=>({...p,rgOrgao:e.target.value}))}/></F>
             <F label="CNH" h><input style={IS} value={formLocatario.cnh||""} onChange={e=>setFormLocatario(p=>({...p,cnh:e.target.value}))}/></F>
             <F label="Telefone" h><input style={IS} value={formLocatario.telefone||""} onChange={e=>setFormLocatario(p=>({...p,telefone:e.target.value}))}/></F>
             <F label="Email" h><input style={IS} type="email" value={formLocatario.email||""} onChange={e=>setFormLocatario(p=>({...p,email:e.target.value}))}/></F>
             <F label="Renda (R$)" h><input style={IS} type="number" value={formLocatario.renda||""} onChange={e=>setFormLocatario(p=>({...p,renda:e.target.value}))}/></F>
           </R>
           <ST>Endereço</ST>
-          <F label="Endereço completo"><input style={IS} value={formLocatario.endereco||""} onChange={e=>setFormLocatario(p=>({...p,endereco:e.target.value}))}/></F>
+          <F label="Endereço"><input style={IS} value={formLocatario.endereco||""} onChange={e=>setFormLocatario(p=>({...p,endereco:e.target.value}))}/></F>
           <R>
             <F label="Bairro" h><input style={IS} value={formLocatario.bairro||""} onChange={e=>setFormLocatario(p=>({...p,bairro:e.target.value}))}/></F>
             <F label="Cidade" h><input style={IS} value={formLocatario.cidade||""} onChange={e=>setFormLocatario(p=>({...p,cidade:e.target.value}))}/></F>
             <F label="Estado" h><input style={IS} value={formLocatario.estado||""} onChange={e=>setFormLocatario(p=>({...p,estado:e.target.value}))}/></F>
             <F label="CEP" h><input style={IS} value={formLocatario.cep||""} onChange={e=>setFormLocatario(p=>({...p,cep:e.target.value}))}/></F>
           </R>
-          <ST>Fiador (se houver)</ST>
+          <ST>Fiador</ST>
           <R>
-            <F label="Nome do Fiador" h><input style={IS} value={formLocatario.fiadorNome||""} onChange={e=>setFormLocatario(p=>({...p,fiadorNome:e.target.value}))}/></F>
-            <F label="CPF do Fiador" h><input style={IS} value={formLocatario.fiadorCpf||""} onChange={e=>setFormLocatario(p=>({...p,fiadorCpf:e.target.value}))}/></F>
-            <F label="Tel. Fiador" h><input style={IS} value={formLocatario.fiadorTelefone||""} onChange={e=>setFormLocatario(p=>({...p,fiadorTelefone:e.target.value}))}/></F>
+            <F label="Nome" h><input style={IS} value={formLocatario.fiadorNome||""} onChange={e=>setFormLocatario(p=>({...p,fiadorNome:e.target.value}))}/></F>
+            <F label="CPF" h><input style={IS} value={formLocatario.fiadorCpf||""} onChange={e=>setFormLocatario(p=>({...p,fiadorCpf:e.target.value}))}/></F>
+            <F label="Telefone" h><input style={IS} value={formLocatario.fiadorTelefone||""} onChange={e=>setFormLocatario(p=>({...p,fiadorTelefone:e.target.value}))}/></F>
           </R>
-          <F label="Observações"><textarea style={{...IS,minHeight:60}} value={formLocatario.obs||""} onChange={e=>setFormLocatario(p=>({...p,obs:e.target.value}))}/></F>
+          <F label="Obs"><textarea style={{...IS,minHeight:50}} value={formLocatario.obs||""} onChange={e=>setFormLocatario(p=>({...p,obs:e.target.value}))}/></F>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:12}}>
             <button style={s.btnG} onClick={()=>setModalLocatario(null)}>Cancelar</button>
             <button style={s.btn()} onClick={saveLocatario}>Salvar</button>
@@ -878,8 +985,8 @@ export default function App(){
       {/* MODAL IMÓVEL */}
       {modalImovel&&(
         <Modal title={modalImovel==="new"?"Novo Imóvel":"Editar Imóvel"} onClose={()=>setModalImovel(null)} wide>
-          <ST>Locador do Imóvel</ST>
-          <F label="Locador"><select style={IS} value={formImovel.locadorId||""} onChange={e=>setFormImovel(p=>({...p,locadorId:e.target.value}))}><option value="">Selecione...</option>{locadores.map(l=><option key={l.id} value={l.id}>{l.nome}</option>)}</select></F>
+          <ST>Locador</ST>
+          <QSelect label="Locador do imóvel" value={formImovel.locadorId||""} onChange={v=>setFormImovel(p=>({...p,locadorId:v}))} options={locadores} getLabel={o=>o.nome} onAdd={()=>setQuickLocadorForImovel(true)}/>
           <ST>Identificação</ST>
           <R>
             <F label="Código *" h><input style={IS} value={formImovel.codigo} onChange={e=>setFormImovel(p=>({...p,codigo:e.target.value}))} placeholder="AP-001"/></F>
@@ -902,7 +1009,7 @@ export default function App(){
             <F label="Mobiliado" h><select style={IS} value={formImovel.mobiliado||"Sem móveis"} onChange={e=>setFormImovel(p=>({...p,mobiliado:e.target.value}))}>{["Mobiliado","Semi-mobiliado","Sem móveis"].map(o=><option key={o}>{o}</option>)}</select></F>
             <F label="Valor Ideal (R$)" h><input style={IS} type="number" value={formImovel.valorIdeal||""} onChange={e=>setFormImovel(p=>({...p,valorIdeal:e.target.value}))}/></F>
           </R>
-          <ST>Contatos do Condomínio</ST>
+          <ST>Contatos</ST>
           <R>
             <F label="Tel. Portaria" h><input style={IS} value={formImovel.telPortaria||""} onChange={e=>setFormImovel(p=>({...p,telPortaria:e.target.value}))}/></F>
             <F label="Tel. Síndico" h><input style={IS} value={formImovel.telSindico||""} onChange={e=>setFormImovel(p=>({...p,telSindico:e.target.value}))}/></F>
@@ -920,11 +1027,11 @@ export default function App(){
       {modalContrato&&(
         <Modal title={modalContrato==="new"?"Novo Contrato":"Editar Contrato"} onClose={()=>setModalContrato(null)} wide>
           <ST>Imóvel</ST>
-          <F label="Imóvel *"><select style={IS} value={formContrato.imovelId} onChange={e=>setFormContrato(p=>({...p,imovelId:e.target.value}))}><option value="">Selecione...</option>{imoveis.map(im=><option key={im.id} value={im.id}>{im.codigo} — {im.endereco}</option>)}</select></F>
+          <QSelect label="Imóvel *" value={formContrato.imovelId} onChange={v=>setFormContrato(p=>({...p,imovelId:v}))} options={imoveis} getLabel={o=>`${o.codigo} — ${o.endereco}`} onAdd={()=>setQuickImovel(n=>setFormContrato(p=>({...p,imovelId:String(n.id)})))}/>
           <ST>Partes</ST>
           <R>
-            <F label="Locatário (cadastro)" h><select style={IS} value={formContrato.locatarioId||""} onChange={e=>{const l=locatarios.find(x=>x.id===+e.target.value);setFormContrato(p=>({...p,locatarioId:e.target.value,locatario:l?.nome||p.locatario,telefoneLocatario:l?.telefone||p.telefoneLocatario}));}}><option value="">Selecione...</option>{locatarios.map(l=><option key={l.id} value={l.id}>{l.nome}</option>)}</select></F>
-            <F label="Locador (cadastro)" h><select style={IS} value={formContrato.locadorId||""} onChange={e=>{const l=locadores.find(x=>x.id===+e.target.value);setFormContrato(p=>({...p,locadorId:e.target.value,locador:l?.nome||p.locador,telefoneLocador:l?.telefone||p.telefoneLocador}));}}><option value="">Selecione...</option>{locadores.map(l=><option key={l.id} value={l.id}>{l.nome}</option>)}</select></F>
+            <QSelect label="Locatário (cadastro)" value={formContrato.locatarioId||""} onChange={v=>{const l=locatarios.find(x=>x.id===+v);setFormContrato(p=>({...p,locatarioId:v,locatario:l?.nome||p.locatario,telefoneLocatario:l?.telefone||p.telefoneLocatario}));}} options={locatarios} getLabel={o=>o.nome} onAdd={()=>setQuickLocatario(n=>{setFormContrato(p=>({...p,locatarioId:String(n.id),locatario:n.nome,telefoneLocatario:n.telefone||p.telefoneLocatario}));})} h/>
+            <QSelect label="Locador (cadastro)" value={formContrato.locadorId||""} onChange={v=>{const l=locadores.find(x=>x.id===+v);setFormContrato(p=>({...p,locadorId:v,locador:l?.nome||p.locador,telefoneLocador:l?.telefone||p.telefoneLocador}));}} options={locadores} getLabel={o=>o.nome} onAdd={()=>setQuickLocador(n=>{setFormContrato(p=>({...p,locadorId:String(n.id),locador:n.nome,telefoneLocador:n.telefone||p.telefoneLocador}));})} h/>
             <F label="Nome Locatário" h><input style={IS} value={formContrato.locatario||""} onChange={e=>setFormContrato(p=>({...p,locatario:e.target.value}))}/></F>
             <F label="Tel. Locatário" h><input style={IS} value={formContrato.telefoneLocatario||""} onChange={e=>setFormContrato(p=>({...p,telefoneLocatario:e.target.value}))}/></F>
             <F label="Nome Locador" h><input style={IS} value={formContrato.locador||""} onChange={e=>setFormContrato(p=>({...p,locador:e.target.value}))}/></F>
@@ -956,14 +1063,14 @@ export default function App(){
           <ST>Penalidades</ST>
           <R>
             <F label="Multa atraso (%)" h><input style={IS} type="number" value={formContrato.multaAtrasoPct||""} onChange={e=>setFormContrato(p=>({...p,multaAtrasoPct:e.target.value}))}/></F>
-            <F label="Juros atraso (% a.m.)" h><input style={IS} type="number" value={formContrato.jurosAtrasoPct||""} onChange={e=>setFormContrato(p=>({...p,jurosAtrasoPct:e.target.value}))}/></F>
-            <F label="Honorários cobrança (%)" h><input style={IS} type="number" value={formContrato.honorariosPct||""} onChange={e=>setFormContrato(p=>({...p,honorariosPct:e.target.value}))}/></F>
-            <F label="Após quantos dias" h><input style={IS} type="number" value={formContrato.honorariosDias||""} onChange={e=>setFormContrato(p=>({...p,honorariosDias:e.target.value}))}/></F>
-            <F label="Honorários advogado (%)" h><input style={IS} type="number" value={formContrato.honorariosAdvPct||""} onChange={e=>setFormContrato(p=>({...p,honorariosAdvPct:e.target.value}))}/></F>
-            <F label="Após quantos dias" h><input style={IS} type="number" value={formContrato.honorariosAdvDias||""} onChange={e=>setFormContrato(p=>({...p,honorariosAdvDias:e.target.value}))}/></F>
+            <F label="Juros (% a.m.)" h><input style={IS} type="number" value={formContrato.jurosAtrasoPct||""} onChange={e=>setFormContrato(p=>({...p,jurosAtrasoPct:e.target.value}))}/></F>
+            <F label="Hon. cobrança (%)" h><input style={IS} type="number" value={formContrato.honorariosPct||""} onChange={e=>setFormContrato(p=>({...p,honorariosPct:e.target.value}))}/></F>
+            <F label="Após dias" h><input style={IS} type="number" value={formContrato.honorariosDias||""} onChange={e=>setFormContrato(p=>({...p,honorariosDias:e.target.value}))}/></F>
+            <F label="Hon. advogado (%)" h><input style={IS} type="number" value={formContrato.honorariosAdvPct||""} onChange={e=>setFormContrato(p=>({...p,honorariosAdvPct:e.target.value}))}/></F>
+            <F label="Após dias" h><input style={IS} type="number" value={formContrato.honorariosAdvDias||""} onChange={e=>setFormContrato(p=>({...p,honorariosAdvDias:e.target.value}))}/></F>
           </R>
           <ST>Contrato PDF</ST>
-          <F label="Upload do contrato"><input style={IS} type="file" accept=".pdf" onChange={e=>setContratoFile(e.target.files[0])}/></F>
+          <F label="Upload"><input style={IS} type="file" accept=".pdf" onChange={e=>setContratoFile(e.target.files[0])}/></F>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:12}}>
             <button style={s.btnG} onClick={()=>setModalContrato(null)}>Cancelar</button>
             <button style={s.btn()} onClick={saveContrato}>Salvar e Gerar Parcelas</button>
@@ -982,41 +1089,20 @@ export default function App(){
               <tbody>{parcelas.map(p=>(
                 <tr key={p.id} style={{background:parcelaEdit?.id===p.id?"#6366f108":"transparent"}}>
                   <td style={s.td}>{p.competencia}</td>
-                  <td style={{...s.td,color:p.status==="Atrasado"||new Date(p.vencimento)<new Date()&&p.status==="Pendente"?"#ef4444":"#cbd5e1"}}>{fmtDate(p.vencimento)}</td>
-                  <td style={{...s.td,fontFamily:"monospace"}}>
-                    {parcelaEdit?.id===p.id?<input style={{...IS,width:100}} type="number" value={parcelaEdit.valor} onChange={e=>setParcelaEdit(x=>({...x,valor:e.target.value}))}/>:fmt(p.valor)}
-                  </td>
-                  <td style={{...s.td,fontFamily:"monospace",color:"#22c55e"}}>
-                    {parcelaEdit?.id===p.id?<input style={{...IS,width:100}} type="number" value={parcelaEdit.valorRecebido||""} onChange={e=>setParcelaEdit(x=>({...x,valorRecebido:e.target.value}))} placeholder="0"/>:fmt(p.valorRecebido||0)}
-                  </td>
-                  <td style={s.td}>
-                    {parcelaEdit?.id===p.id?<input style={{...IS,width:130}} type="date" value={parcelaEdit.dataRecebimento||""} onChange={e=>setParcelaEdit(x=>({...x,dataRecebimento:e.target.value}))}/>:fmtDate(p.dataRecebimento)}
-                  </td>
-                  <td style={s.td}>
-                    {parcelaEdit?.id===p.id?<select style={{...IS,width:110}} value={parcelaEdit.status} onChange={e=>setParcelaEdit(x=>({...x,status:e.target.value}))}>{["Pendente","Pago","Atrasado"].map(st=><option key={st}>{st}</option>)}</select>:<Badge label={p.status}/>}
-                  </td>
-                  <td style={s.td}>
-                    {parcelaEdit?.id===p.id?(
-                      <div style={{display:"flex",gap:4}}>
-                        <button style={s.btn("#22c55e")} onClick={saveParcela}>✓</button>
-                        <button style={s.btnG} onClick={()=>setParcelaEdit(null)}>✕</button>
-                      </div>
-                    ):<button style={s.btnG} onClick={()=>setParcelaEdit({...p,valor:String(p.valor),valorRecebido:String(p.valorRecebido||""),dataRecebimento:p.dataRecebimento?.slice(0,10)||""})}>✎</button>}
-                  </td>
+                  <td style={{...s.td,color:p.status!=="Pago"&&new Date(p.vencimento+"T12:00:00")<new Date()?"#ef4444":"#cbd5e1"}}>{fmtDate(p.vencimento)}</td>
+                  <td style={{...s.td,fontFamily:"monospace"}}>{parcelaEdit?.id===p.id?<input style={{...IS,width:100}} type="number" value={parcelaEdit.valor} onChange={e=>setParcelaEdit(x=>({...x,valor:e.target.value}))}/>:fmt(p.valor)}</td>
+                  <td style={{...s.td,fontFamily:"monospace",color:"#22c55e"}}>{parcelaEdit?.id===p.id?<input style={{...IS,width:100}} type="number" value={parcelaEdit.valorRecebido||""} onChange={e=>setParcelaEdit(x=>({...x,valorRecebido:e.target.value}))} placeholder="0"/>:fmt(p.valorRecebido||0)}</td>
+                  <td style={s.td}>{parcelaEdit?.id===p.id?<input style={{...IS,width:130}} type="date" value={parcelaEdit.dataRecebimento||""} onChange={e=>setParcelaEdit(x=>({...x,dataRecebimento:e.target.value}))}/>:fmtDate(p.dataRecebimento)}</td>
+                  <td style={s.td}>{parcelaEdit?.id===p.id?<select style={{...IS,width:110}} value={parcelaEdit.status} onChange={e=>setParcelaEdit(x=>({...x,status:e.target.value}))}>{["Pendente","Pago","Atrasado"].map(st=><option key={st}>{st}</option>)}</select>:<Badge label={p.status}/>}</td>
+                  <td style={s.td}>{parcelaEdit?.id===p.id?<div style={{display:"flex",gap:4}}><button style={s.btn("#22c55e")} onClick={saveParcela}>✓</button><button style={s.btnG} onClick={()=>setParcelaEdit(null)}>✕</button></div>:<button style={s.btnG} onClick={()=>setParcelaEdit({...p,valor:String(p.valor),valorRecebido:String(p.valorRecebido||""),dataRecebimento:p.dataRecebimento?.slice(0,10)||""})}>✎</button>}</td>
                 </tr>
               ))}</tbody>
             </table>
           </div>
           <ST>Histórico de Reajustes</ST>
-          {reajustes.length===0?<div style={{color:"#475569",fontSize:13,marginBottom:8}}>Nenhum reajuste</div>:
+          {reajustes.length===0?<div style={{color:"#475569",fontSize:13}}>Nenhum reajuste</div>:
           <table><thead><tr><th style={s.th}>Data</th><th style={s.th}>Índice</th><th style={s.th}>Período</th><th style={s.th}>Anterior</th><th style={s.th}>%</th><th style={s.th}>Novo</th></tr></thead>
-            <tbody>{reajustes.map(r=><tr key={r.id}>
-              <td style={s.td}>{fmtDate(r.dataReajuste)}</td><td style={s.td}>{r.indice}</td>
-              <td style={s.td}>{fmtDate(r.periodoInicio)} a {fmtDate(r.periodoFim)}</td>
-              <td style={{...s.td,fontFamily:"monospace"}}>{fmt(r.valorAnterior)}</td>
-              <td style={{...s.td,color:"#22c55e"}}>{r.percentual}%</td>
-              <td style={{...s.td,fontFamily:"monospace",fontWeight:700}}>{fmt(r.valorNovo)}</td>
-            </tr>)}</tbody>
+            <tbody>{reajustes.map(r=><tr key={r.id}><td style={s.td}>{fmtDate(r.dataReajuste)}</td><td style={s.td}>{r.indice}</td><td style={s.td}>{fmtDate(r.periodoInicio)} a {fmtDate(r.periodoFim)}</td><td style={{...s.td,fontFamily:"monospace"}}>{fmt(r.valorAnterior)}</td><td style={{...s.td,color:"#22c55e"}}>{r.percentual}%</td><td style={{...s.td,fontFamily:"monospace",fontWeight:700}}>{fmt(r.valorNovo)}</td></tr>)}</tbody>
           </table>}
         </Modal>
       )}
@@ -1025,21 +1111,21 @@ export default function App(){
       {modalReajuste&&(
         <Modal title="Registrar Reajuste Anual" onClose={()=>setModalReajuste(null)}>
           <R>
-            <F label="Data do reajuste *" h><input style={IS} type="date" value={formReajuste.dataReajuste} onChange={e=>setFormReajuste(p=>({...p,dataReajuste:e.target.value}))}/></F>
+            <F label="Data *" h><input style={IS} type="date" value={formReajuste.dataReajuste} onChange={e=>setFormReajuste(p=>({...p,dataReajuste:e.target.value}))}/></F>
             <F label="Índice" h><select style={IS} value={formReajuste.indice} onChange={e=>setFormReajuste(p=>({...p,indice:e.target.value}))}>{indiceOpts.map(o=><option key={o}>{o}</option>)}</select></F>
-            <F label="Período De" h><input style={IS} type="date" value={formReajuste.periodoInicio} onChange={e=>setFormReajuste(p=>({...p,periodoInicio:e.target.value}))}/></F>
-            <F label="Período Até" h><input style={IS} type="date" value={formReajuste.periodoFim} onChange={e=>setFormReajuste(p=>({...p,periodoFim:e.target.value}))}/></F>
-            <F label="Valor anterior (R$)" h><input style={IS} type="number" value={formReajuste.valorAnterior} onChange={e=>{const va=+e.target.value;const vn=va+(va*+formReajuste.percentual/100);setFormReajuste(p=>({...p,valorAnterior:e.target.value,valorNovo:vn.toFixed(2)}));}}/></F>
-            <F label="Percentual (%)" h><input style={IS} type="number" value={formReajuste.percentual} onChange={e=>{const pct=+e.target.value;const vn=+formReajuste.valorAnterior*(1+pct/100);setFormReajuste(p=>({...p,percentual:e.target.value,valorNovo:vn.toFixed(2)}));}}/></F>
+            <F label="Período De" h><input style={IS} type="date" value={formReajuste.periodoInicio||""} onChange={e=>setFormReajuste(p=>({...p,periodoInicio:e.target.value}))}/></F>
+            <F label="Período Até" h><input style={IS} type="date" value={formReajuste.periodoFim||""} onChange={e=>setFormReajuste(p=>({...p,periodoFim:e.target.value}))}/></F>
+            <F label="Valor anterior (R$)" h><input style={IS} type="number" value={formReajuste.valorAnterior||""} onChange={e=>{const va=+e.target.value;setFormReajuste(p=>({...p,valorAnterior:e.target.value,valorNovo:(va*(1++p.percentual/100)).toFixed(2)}));}}/></F>
+            <F label="Percentual (%)" h><input style={IS} type="number" value={formReajuste.percentual||""} onChange={e=>{const pct=+e.target.value;setFormReajuste(p=>({...p,percentual:e.target.value,valorNovo:(+p.valorAnterior*(1+pct/100)).toFixed(2)}));}}/></F>
             <F label="Valor novo (R$) *" h>
-              <input style={IS} type="number" value={formReajuste.valorNovo} onChange={e=>setFormReajuste(p=>({...p,valorNovo:e.target.value}))}/>
-              {formReajuste.valorAnterior&&formReajuste.valorNovo&&<div style={{fontSize:11,color:"#22c55e",marginTop:3}}>+{fmt(+formReajuste.valorNovo - +formReajuste.valorAnterior)}/mês</div>}
+              <input style={IS} type="number" value={formReajuste.valorNovo||""} onChange={e=>setFormReajuste(p=>({...p,valorNovo:e.target.value}))}/>
+              {formReajuste.valorAnterior&&formReajuste.valorNovo&&<div style={{fontSize:11,color:"#22c55e",marginTop:3}}>+{fmt(+formReajuste.valorNovo-+formReajuste.valorAnterior)}/mês</div>}
             </F>
           </R>
           <F label="Observação"><input style={IS} value={formReajuste.obs||""} onChange={e=>setFormReajuste(p=>({...p,obs:e.target.value}))}/></F>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
             <button style={s.btnG} onClick={()=>setModalReajuste(null)}>Cancelar</button>
-            <button style={s.btn("#22c55e")} onClick={saveReajuste}>Salvar Reajuste</button>
+            <button style={s.btn("#22c55e")} onClick={saveReajuste}>Salvar</button>
           </div>
         </Modal>
       )}
@@ -1047,33 +1133,42 @@ export default function App(){
       {/* MODAL REPASSE */}
       {modalRepasse&&(
         <Modal title="Gerar Repasse ao Locador" onClose={()=>setModalRepasse(null)}>
-          <F label="Contrato *"><select style={IS} value={formRepasse.contratoId} onChange={e=>{const c=calcRepasse(e.target.value);setFormRepasse(p=>({...p,contratoId:e.target.value,...c}));}}>
-            <option value="">Selecione...</option>{contratos.filter(c=>c.status==="Ativo").map(c=><option key={c.id} value={c.id}>{c.codigo} — {c.locadorNomeFull||c.locador}</option>)}
-          </select></F>
+          <F label="Contrato *">
+            <select style={IS} value={formRepasse.contratoId} onChange={e=>{const c=calcRepasse(e.target.value);setFormRepasse(p=>({...p,contratoId:e.target.value,...c}));}}>
+              <option value="">Selecione...</option>
+              {contratos.filter(c=>c.status==="Ativo").map(c=><option key={c.id} value={c.id}>{c.codigo} — {c.locadorNomeFull||c.locador}</option>)}
+            </select>
+          </F>
+          {formRepasse.contratoId&&(()=>{
+            const c=contratos.find(x=>x.id===+formRepasse.contratoId);
+            return c&&<div style={{background:"#6366f108",border:"1px solid #6366f130",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:13,color:"#818cf8"}}>
+              Locador: <strong>{c.locadorNomeFull||c.locador}</strong> · {c.formaPagamento||"Pix"}
+            </div>;
+          })()}
           <R>
-            <F label="Competência *" h><input style={IS} value={formRepasse.competencia} onChange={e=>setFormRepasse(p=>({...p,competencia:e.target.value}))} placeholder="Ex: Maio/2025"/></F>
-            <F label="Data do repasse" h><input style={IS} type="date" value={formRepasse.dataRepasse||""} onChange={e=>setFormRepasse(p=>({...p,dataRepasse:e.target.value}))}/></F>
+            <F label="Competência *" h><input style={IS} value={formRepasse.competencia||""} onChange={e=>setFormRepasse(p=>({...p,competencia:e.target.value}))} placeholder="Ex: Maio/2025"/></F>
+            <F label="Data" h><input style={IS} type="date" value={formRepasse.dataRepasse||""} onChange={e=>setFormRepasse(p=>({...p,dataRepasse:e.target.value}))}/></F>
           </R>
           {formRepasse.contratoId&&(
             <div style={{background:"#0f1623",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #2d3748"}}>
               <div style={{fontSize:11,color:"#6366f1",fontWeight:700,marginBottom:10}}>ACERTO — edite se necessário</div>
               <R>
-                <F label="Valor recebido (R$)" h><input style={IS} type="number" value={formRepasse.valorRecebido||""} onChange={e=>setFormRepasse(p=>({...p,valorRecebido:e.target.value,valorLiquido:(+e.target.value - +p.totalDespesas - +p.taxaAdm).toFixed(2)}))}/></F>
-                <F label="Total despesas (R$)" h><input style={IS} type="number" value={formRepasse.totalDespesas||""} onChange={e=>setFormRepasse(p=>({...p,totalDespesas:e.target.value,valorLiquido:(+p.valorRecebido - +e.target.value - +p.taxaAdm).toFixed(2)}))}/></F>
-                <F label="Taxa adm (R$)" h><input style={IS} type="number" value={formRepasse.taxaAdm||""} onChange={e=>setFormRepasse(p=>({...p,taxaAdm:e.target.value,valorLiquido:(+p.valorRecebido - +p.totalDespesas - +e.target.value).toFixed(2)}))}/></F>
+                <F label="Valor recebido (R$)" h><input style={IS} type="number" value={formRepasse.valorRecebido||""} onChange={e=>setFormRepasse(p=>({...p,valorRecebido:e.target.value,valorLiquido:(+e.target.value-+p.totalDespesas-+p.taxaAdm).toFixed(2)}))}/></F>
+                <F label="Total despesas (R$)" h><input style={IS} type="number" value={formRepasse.totalDespesas||""} onChange={e=>setFormRepasse(p=>({...p,totalDespesas:e.target.value,valorLiquido:(+p.valorRecebido-+e.target.value-+p.taxaAdm).toFixed(2)}))}/></F>
+                <F label="Taxa adm (R$)" h><input style={IS} type="number" value={formRepasse.taxaAdm||""} onChange={e=>setFormRepasse(p=>({...p,taxaAdm:e.target.value,valorLiquido:(+p.valorRecebido-+p.totalDespesas-+e.target.value).toFixed(2)}))}/></F>
                 <F label="Valor líquido (R$)" h><input style={{...IS,color:"#22c55e",fontWeight:700}} type="number" value={formRepasse.valorLiquido||""} onChange={e=>setFormRepasse(p=>({...p,valorLiquido:e.target.value}))}/></F>
               </R>
             </div>
           )}
           <R>
-            <F label="Forma de pagamento" h><select style={IS} value={formRepasse.formaPagamento} onChange={e=>setFormRepasse(p=>({...p,formaPagamento:e.target.value}))}>{fpOpts.map(o=><option key={o}>{o}</option>)}</select></F>
+            <F label="Forma pagamento" h><select style={IS} value={formRepasse.formaPagamento} onChange={e=>setFormRepasse(p=>({...p,formaPagamento:e.target.value}))}>{fpOpts.map(o=><option key={o}>{o}</option>)}</select></F>
             <F label="Status" h><select style={IS} value={formRepasse.status} onChange={e=>setFormRepasse(p=>({...p,status:e.target.value}))}>{["Pendente","Repassado"].map(t=><option key={t}>{t}</option>)}</select></F>
           </R>
           <F label="Comprovante"><input style={IS} type="file" accept=".pdf,image/*" onChange={e=>setComprovanteFile(e.target.files[0])}/></F>
           <F label="Observação"><input style={IS} value={formRepasse.obs||""} onChange={e=>setFormRepasse(p=>({...p,obs:e.target.value}))}/></F>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
             <button style={s.btnG} onClick={()=>setModalRepasse(null)}>Cancelar</button>
-            <button style={s.btn("#06b6d4")} onClick={saveRepasse}>Confirmar Repasse</button>
+            <button style={s.btn("#06b6d4")} onClick={saveRepasse}>Confirmar</button>
           </div>
         </Modal>
       )}
@@ -1081,7 +1176,21 @@ export default function App(){
       {/* MODAL DESPESA */}
       {modalDespesa&&(
         <Modal title={modalDespesa==="new"?"Registrar Despesa":"Editar Despesa"} onClose={()=>setModalDespesa(null)}>
-          <F label="Contrato *"><select style={IS} value={formDespesa.contratoId} onChange={e=>setFormDespesa(p=>({...p,contratoId:e.target.value}))}><option value="">Selecione...</option>{contratos.map(c=><option key={c.id} value={c.id}>{c.codigo} — {c.locatario}</option>)}</select></F>
+          <F label="Contrato *">
+            <select style={IS} value={formDespesa.contratoId} onChange={e=>{
+              const c=contratos.find(x=>x.id===+e.target.value);
+              const im=c?imoveis.find(x=>x.id===c.imovelId):null;
+              setFormDespesa(p=>({...p,contratoId:e.target.value,imovelInfo:im?`${im.codigo} — ${im.endereco}`:""}));
+            }}>
+              <option value="">Selecione...</option>
+              {contratos.map(c=><option key={c.id} value={c.id}>{c.codigo} — {c.locatario}</option>)}
+            </select>
+          </F>
+          {formDespesa.imovelInfo&&(
+            <div style={{background:"#6366f108",border:"1px solid #6366f130",borderRadius:8,padding:"7px 12px",marginBottom:12,fontSize:13,color:"#818cf8"}}>
+              Imóvel: {formDespesa.imovelInfo}
+            </div>
+          )}
           <R>
             <F label="Data *" h><input style={IS} type="date" value={formDespesa.data||""} onChange={e=>setFormDespesa(p=>({...p,data:e.target.value}))}/></F>
             <F label="Valor (R$) *" h><input style={IS} type="number" value={formDespesa.valor||""} onChange={e=>setFormDespesa(p=>({...p,valor:e.target.value}))}/></F>
@@ -1096,7 +1205,7 @@ export default function App(){
         </Modal>
       )}
 
-      {/* MODAL COMPROVANTE REPASSE */}
+      {/* MODAL COMPROVANTE */}
       {repasseId&&(
         <Modal title="Confirmar Repasse" onClose={()=>setRepasseId(null)}>
           <F label="Comprovante (PDF ou imagem)"><input style={IS} type="file" accept=".pdf,image/*" onChange={e=>setComprovanteFile(e.target.files[0])}/></F>
@@ -1107,201 +1216,10 @@ export default function App(){
         </Modal>
       )}
 
-      {/* MODAL DETALHE (locador/locatario/imovel/contrato) */}
+      {/* DETALHE */}
       {modalDetalhe&&(
-        <DetalheModal
-          tipo={modalDetalhe.tipo}
-          data={modalDetalhe.data}
-          onClose={()=>setModalDetalhe(null)}
-          isAdmin={isAdmin}
-          showToast={showToast}
-          s={s}
-        />
+        <DetalheModal tipo={modalDetalhe.tipo} data={modalDetalhe.data} onClose={()=>setModalDetalhe(null)} isAdmin={isAdmin} showToast={showToast}/>
       )}
-    </div>
-  );
-}
-
-// ─── Detalhe Modal Component ──────────────────────────────────────────────────
-function DetalheModal({tipo,data,onClose,isAdmin,showToast,s}){
-  const [docs,setDocs]=useState([]);
-  const [vistorias,setVistorias]=useState([]);
-  const [historico,setHistorico]=useState([]);
-  const [activeTab,setActiveTab]=useState("dados");
-  const [novaVistoria,setNovaVistoria]=useState({tipo:"Entrada",data:"",responsavel:"",observacoes:""});
-  const [novoHistorico,setNovoHistorico]=useState({tipo:"Ocorrência",descricao:"",data:""});
-
-  const IS2={width:"100%",background:"#0f1623",border:"1px solid #2d3748",borderRadius:8,color:"#e2e8f0",padding:"8px 12px",fontSize:14,boxSizing:"border-box",outline:"none",fontFamily:"inherit"};
-
-  useEffect(()=>{
-    if(tipo==="locador"){api.getDocsPessoa("locador",data.id).then(setDocs).catch(()=>{});}
-    if(tipo==="locatario"){api.getDocsPessoa("locatario",data.id).then(setDocs).catch(()=>{});}
-    if(tipo==="imovel"){
-      api.getDocsImovel(data.id).then(setDocs).catch(()=>{});
-      api.getVistorias(data.id).then(setVistorias).catch(()=>{});
-      api.getHistorico(data.id).then(setHistorico).catch(()=>{});
-    }
-  },[tipo,data.id]);
-
-  const fmt2=(v)=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-  const fmtDate2=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString("pt-BR"):"-";
-
-  const campos={
-    locador:[["Nome",data.nome],["CPF/CNPJ",data.cpfCnpj],["Nacionalidade",data.nacionalidade],["Estado Civil",data.estadoCivil],["Profissão",data.profissao],["RG",data.rg],["Órgão",data.rgOrgao],["Telefone",data.telefone],["Email",data.email],["Endereço",data.endereco],["Bairro",data.bairro],["Cidade",data.cidade],["Estado",data.estado],["CEP",data.cep],["Procurador",data.procuradorNome],["CPF Procurador",data.procuradorCpf],["Banco",data.banco],["Agência",data.agencia],["Conta",data.conta],["PIX",data.pix],["Obs",data.obs]],
-    locatario:[["Nome",data.nome],["CPF",data.cpf],["Nacionalidade",data.nacionalidade],["Estado Civil",data.estadoCivil],["Profissão",data.profissao],["RG",data.rg],["CNH",data.cnh],["Telefone",data.telefone],["Email",data.email],["Renda",data.renda?fmt2(data.renda):"—"],["Endereço",data.endereco],["Bairro",data.bairro],["Cidade",data.cidade],["Fiador",data.fiadorNome],["CPF Fiador",data.fiadorCpf],["Tel. Fiador",data.fiadorTelefone],["Obs",data.obs]],
-    imovel:[["Código",data.codigo],["Endereço",data.endereco],["Bairro",data.bairro],["Cidade",data.cidade],["CEP",data.cep],["Tipo",data.tipo],["Área",data.area?`${data.area}m²`:"—"],["Condomínio",data.nomeCondominio],["Bloco",data.bloco],["Apto",data.apartamento],["Quartos",data.quartos],["Mobiliado",data.mobiliado],["Valor Ideal",data.valorIdeal?fmt2(data.valorIdeal):"—"],["Locador",data.locadorNome],["Tel. Portaria",data.telPortaria],["Tel. Síndico",data.telSindico],["Tel. Contabilidade",data.telContabilidade],["Tel. Cobrança",data.telCobranca]],
-    contrato:[],
-  }[tipo]||[];
-
-  const tabs=[{id:"dados",label:"Dados"},
-    {id:"docs",label:"Documentos"},
-    ...(tipo==="imovel"?[{id:"vistorias",label:"Vistorias"},{id:"historico",label:"Histórico"}]:[]),
-  ];
-
-  const tiposDoc=tipo==="imovel"?
-    [["contrato_adm","Contrato ADM"],["energia","Energia"],["agua","Água"],["gas","Gás"],["condominio","Condomínio"],["iptu","IPTU"],["outros","Outros"]]:
-    [["rg","RG"],["cpf","CPF"],["comprovante_renda","Comp. Renda"],["comprovante_endereco","Comp. Endereço"],["outros","Outros"]];
-
-  async function handleUpload(docTipo,file,cb){
-    try{
-      let doc;
-      if(tipo==="imovel") doc=await api.uploadDocImovel(data.id,docTipo,file);
-      else doc=await api.uploadDocPessoa(tipo,data.id,docTipo,file);
-      setDocs(p=>[...p,doc]);showToast("Documento enviado!");if(cb)cb();
-    }catch(e){showToast(e.message,"error");}
-  }
-
-  async function handleView(id){
-    try{
-      let r;
-      if(tipo==="imovel") r=await api.getDocImovelUrl(id);
-      else r=await api.getDocUrl(id);
-      window.open(r.url,"_blank");
-    }catch(e){showToast(e.message,"error");}
-  }
-
-  async function handleDelete(id){
-    try{
-      if(tipo==="imovel") await api.deleteDocImovel(id);
-      else await api.deleteDocPessoa(id);
-      setDocs(p=>p.filter(x=>x.id!==id));showToast("Excluído");
-    }catch(e){showToast(e.message,"error");}
-  }
-
-  const titles={locador:"Locador",locatario:"Locatário",imovel:"Imóvel",contrato:"Contrato"};
-
-  return(
-    <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflowY:"auto"}}>
-      <div style={{background:"#1a1f2e",borderRadius:16,padding:28,width:"100%",maxWidth:720,border:"1px solid #2d3748",boxShadow:"0 25px 60px #000a",margin:"auto"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <h3 style={{color:"#e2e8f0",fontWeight:700,fontSize:18,margin:0}}>{titles[tipo]} — {data.nome||data.codigo||data.locatario}</h3>
-          <button onClick={onClose} style={{background:"none",border:"none",color:"#94a3b8",fontSize:22,cursor:"pointer"}}>✕</button>
-        </div>
-
-        {/* Tabs */}
-        <div style={{display:"flex",gap:4,marginBottom:16,borderBottom:"1px solid #1e2940",paddingBottom:8}}>
-          {tabs.map(t=>(
-            <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{background:activeTab===t.id?"#6366f120":"none",border:"none",borderBottom:activeTab===t.id?"2px solid #6366f1":"2px solid transparent",color:activeTab===t.id?"#818cf8":"#64748b",padding:"6px 14px",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,borderRadius:"6px 6px 0 0"}}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {activeTab==="dados"&&(
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 24px"}}>
-            {campos.map(([k,v])=>(
-              <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #1e2940"}}>
-                <span style={{color:"#64748b",fontSize:13}}>{k}</span>
-                <span style={{fontSize:13,fontWeight:500,textAlign:"right",maxWidth:"55%"}}>{v||"—"}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab==="docs"&&(
-          <DocUploader
-            docs={docs}
-            onUpload={handleUpload}
-            onView={handleView}
-            onDelete={handleDelete}
-            tipos={tiposDoc}
-            isAdmin={isAdmin}
-          />
-        )}
-
-        {activeTab==="vistorias"&&tipo==="imovel"&&(
-          <div>
-            {isAdmin&&(
-              <div style={{background:"#0f1623",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #2d3748"}}>
-                <div style={{fontSize:12,color:"#6366f1",fontWeight:700,marginBottom:10}}>Nova Vistoria</div>
-                <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-                  <div style={{flex:1,minWidth:120}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Tipo</label>
-                    <select style={IS2} value={novaVistoria.tipo} onChange={e=>setNovaVistoria(p=>({...p,tipo:e.target.value}))}>{["Entrada","Saída","Periódica"].map(t=><option key={t}>{t}</option>)}</select></div>
-                  <div style={{flex:1,minWidth:130}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Data</label>
-                    <input style={IS2} type="date" value={novaVistoria.data} onChange={e=>setNovaVistoria(p=>({...p,data:e.target.value}))}/></div>
-                  <div style={{flex:2,minWidth:150}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Responsável</label>
-                    <input style={IS2} value={novaVistoria.responsavel} onChange={e=>setNovaVistoria(p=>({...p,responsavel:e.target.value}))}/></div>
-                </div>
-                <div style={{marginTop:10}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Observações</label>
-                  <textarea style={{...IS2,minHeight:60}} value={novaVistoria.observacoes} onChange={e=>setNovaVistoria(p=>({...p,observacoes:e.target.value}))}/></div>
-                <button style={{background:"#6366f1",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,marginTop:8}} onClick={async()=>{
-                  if(!novaVistoria.data||!novaVistoria.responsavel) return showToast("Preencha data e responsável","error");
-                  try{
-                    const v=await api.createVistoria(data.id,novaVistoria);
-                    setVistorias(p=>[v,...p]);
-                    setNovaVistoria({tipo:"Entrada",data:"",responsavel:"",observacoes:""});
-                    showToast("Vistoria registrada!");
-                  }catch(e){showToast(e.message,"error");}
-                }}>Registrar Vistoria</button>
-              </div>
-            )}
-            {vistorias.length===0?<div style={{color:"#475569",fontSize:13}}>Nenhuma vistoria registrada</div>:
-            vistorias.map(v=>(
-              <div key={v.id} style={{background:"#0f1623",borderRadius:10,padding:14,marginBottom:10,border:"1px solid #2d3748"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                  <div><span style={{fontWeight:700,color:"#e2e8f0"}}>{v.tipo}</span><span style={{color:"#64748b",fontSize:12,marginLeft:8}}>{fmtDate2(v.data)} · {v.responsavel}</span></div>
-                </div>
-                {v.observacoes&&<div style={{fontSize:13,color:"#94a3b8",marginBottom:8}}>{v.observacoes}</div>}
-                <div style={{fontSize:11,color:"#64748b"}}>{v.fotos?.filter(f=>f.id)?.length||0} foto(s)</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab==="historico"&&tipo==="imovel"&&(
-          <div>
-            {isAdmin&&(
-              <div style={{background:"#0f1623",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #2d3748"}}>
-                <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end"}}>
-                  <div style={{flex:1,minWidth:120}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Tipo</label>
-                    <select style={IS2} value={novoHistorico.tipo} onChange={e=>setNovoHistorico(p=>({...p,tipo:e.target.value}))}>{["Ocorrência","Manutenção","Reclamação","Visita","Outros"].map(t=><option key={t}>{t}</option>)}</select></div>
-                  <div style={{flex:1,minWidth:130}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Data</label>
-                    <input style={IS2} type="date" value={novoHistorico.data} onChange={e=>setNovoHistorico(p=>({...p,data:e.target.value}))}/></div>
-                  <div style={{flex:3,minWidth:200}}><label style={{color:"#94a3b8",fontSize:12,fontWeight:600,display:"block",marginBottom:4}}>Descrição</label>
-                    <input style={IS2} value={novoHistorico.descricao} onChange={e=>setNovoHistorico(p=>({...p,descricao:e.target.value}))}/></div>
-                  <button style={{background:"#6366f1",color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13}} onClick={async()=>{
-                    if(!novoHistorico.descricao||!novoHistorico.data) return showToast("Preencha descrição e data","error");
-                    try{
-                      const h=await api.addHistorico(data.id,novoHistorico);
-                      setHistorico(p=>[h,...p]);
-                      setNovoHistorico({tipo:"Ocorrência",descricao:"",data:""});
-                      showToast("Registrado!");
-                    }catch(e){showToast(e.message,"error");}
-                  }}>Adicionar</button>
-                </div>
-              </div>
-            )}
-            {historico.length===0?<div style={{color:"#475569",fontSize:13}}>Nenhum histórico</div>:
-            historico.map(h=>(
-              <div key={h.id} style={{display:"flex",gap:12,padding:"8px 0",borderBottom:"1px solid #1e2940"}}>
-                <div style={{minWidth:80,fontSize:11,color:"#64748b"}}>{fmtDate2(h.data)}</div>
-                <div style={{flex:1}}><span style={{fontSize:11,background:"#6366f120",color:"#818cf8",padding:"1px 8px",borderRadius:10,marginRight:6}}>{h.tipo}</span><span style={{fontSize:13}}>{h.descricao}</span></div>
-                <div style={{fontSize:11,color:"#475569"}}>{h.usuarioNome}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
