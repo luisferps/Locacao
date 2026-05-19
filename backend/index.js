@@ -182,6 +182,31 @@ async function initDb() {
       nome TEXT, key TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+  // Migrations - adiciona colunas que podem não existir em bancos antigos
+  const migrations = [
+    "ALTER TABLE despesas ADD COLUMN IF NOT EXISTS contrato_id INT REFERENCES contratos(id) ON DELETE CASCADE",
+    "ALTER TABLE repasses ADD COLUMN IF NOT EXISTS contrato_id INT REFERENCES contratos(id) ON DELETE CASCADE",
+    "ALTER TABLE repasses ADD COLUMN IF NOT EXISTS data_repasse DATE",
+    "ALTER TABLE repasses ADD COLUMN IF NOT EXISTS valor_recebido NUMERIC",
+    "ALTER TABLE repasses ADD COLUMN IF NOT EXISTS total_despesas NUMERIC",
+    "ALTER TABLE repasses ADD COLUMN IF NOT EXISTS taxa_adm NUMERIC",
+    "ALTER TABLE repasses ADD COLUMN IF NOT EXISTS valor_liquido NUMERIC",
+    "ALTER TABLE repasses ADD COLUMN IF NOT EXISTS forma_pagamento TEXT",
+    "ALTER TABLE repasses ADD COLUMN IF NOT EXISTS comprovante_key TEXT",
+    "ALTER TABLE repasses ADD COLUMN IF NOT EXISTS comprovante_nome TEXT",
+    "ALTER TABLE repasses ADD COLUMN IF NOT EXISTS obs TEXT",
+    "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS locatario_id INT REFERENCES locatarios(id) ON DELETE SET NULL",
+    "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS locador_id INT REFERENCES locadores(id) ON DELETE SET NULL",
+    "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS caucao NUMERIC DEFAULT 0",
+    "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS indice_reajuste TEXT DEFAULT 'IGPM'",
+    "ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS locador_id INT REFERENCES locadores(id) ON DELETE SET NULL",
+    "ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS cidade TEXT",
+    "ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS estado TEXT",
+    "ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS cep TEXT",
+  ];
+  for (const m of migrations) {
+    await pool.query(m).catch(e => console.log("Migration skip:", e.message));
+  }
   await pool.query("UPDATE usuarios SET aprovado=true WHERE role='admin' AND aprovado=false");
   console.log("Banco inicializado.");
 }
