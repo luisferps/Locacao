@@ -1,4 +1,4 @@
-// v10
+// v11
 import { useState, useEffect, useMemo, useRef } from "react";
 import { api } from "./api.js";
 import Auth from "./Auth.jsx";
@@ -1101,11 +1101,13 @@ export default function App(){
           <ST>Imóvel</ST>
           <QSelect label="Imóvel *" value={formContrato.imovelId} onChange={v=>{
             const im=imoveis.find(x=>x.id===+v);
-            const loc=im?.locadorId?locadores.find(l=>l.id===+im.locadorId):null;
-            setFormContrato(p=>({...p,imovelId:v,
-              locadorId:loc?String(loc.id):p.locadorId,
-              locador:loc?.nome||p.locador,
-              telefoneLocador:loc?.telefone||p.telefoneLocador
+            const locadorId=im?.locadorId?+im.locadorId:null;
+            const loc=locadorId?locadores.find(l=>l.id===locadorId):null;
+            setFormContrato(p=>({...p,
+              imovelId:v,
+              locadorId:loc?String(loc.id):(p.locadorId||""),
+              locador:loc?.nome||im?.locadorNome||"",
+              telefoneLocador:loc?.telefone||im?.locadorTel||"",
             }));
           }} options={imoveis} getLabel={o=>`${o.codigo} — ${o.endereco}`} onAdd={()=>setQuickImovel(n=>setFormContrato(p=>({...p,imovelId:String(n.id)})))}/>
           <ST>Partes</ST>
