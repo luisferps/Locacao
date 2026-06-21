@@ -326,6 +326,27 @@ function DetalheModal({tipo,data,onClose,isAdmin,showToast}){
 export default function App(){
   const [tab,setTab]=useState("dashboard");
   const [user,setUser]=useState(()=>{try{return JSON.parse(localStorage.getItem("user"));}catch{return null;}});
+  // ── SSO: se veio ?sso=token do Portal, troca pelo JWT da Locação antes de tudo ──
+  const [ssoLoading,setSsoLoading]=useState(()=>new URLSearchParams(window.location.search).has("sso"));
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search);
+    const ssoToken=params.get("sso");
+    if(!ssoToken) return;
+    // limpa o token da URL na hora
+    try{ window.history.replaceState(null,"",window.location.pathname); }catch{}
+    (async()=>{
+      try{
+        const res=await api.sso({ token: ssoToken });
+        if(res && res.token){
+          localStorage.setItem("token",res.token);
+          localStorage.setItem("user",JSON.stringify(res.user));
+          window.location.reload();
+          return;
+        }
+      }catch(e){ /* cai no login normal */ }
+      setSsoLoading(false);
+    })();
+  },[]);
   const isAdmin=user?.role==="admin";
   const isInterno=!user?.tipoAcesso||user?.tipoAcesso==="interno";
 
@@ -409,6 +430,7 @@ export default function App(){
     }).catch(()=>showToast("Erro ao carregar","error")).finally(()=>setLoading(false));
   },[user]);
 
+  if(ssoLoading) return <div style={{minHeight:"100vh",background:"#0a0e1a",display:"flex",alignItems:"center",justifyContent:"center",color:"#94a3b8",fontFamily:"'DM Sans',sans-serif",fontSize:15}}>Entrando pelo Portal…</div>;
   if(!user) return <Auth onLogin={()=>window.location.reload()}/>;
 
   // Quick-add handlers
