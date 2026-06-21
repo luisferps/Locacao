@@ -25,6 +25,7 @@ const fd = (file, field, extra) => {
 
 export const api = {
   login: (d) => req("POST", "/api/auth/login", d),
+  sso: (d) => req("POST", "/api/auth/sso", d),
   register: (d) => req("POST", "/api/auth/register", d),
   getDashboard: () => req("GET", "/api/dashboard"),
   getDre: (inicio, fim) => req("GET", `/api/dre${inicio&&fim?`?inicio=${inicio}&fim=${fim}`:""}`),
