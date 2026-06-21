@@ -311,6 +311,49 @@ app.post("/api/auth/login", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── SSO: entrada pelo Portal Inerente ──────────────────────────────────────────
+// Recebe o token SSO (gerado pelo Portal), valida no backend principal, acha o
+// usuário interno pelo email e devolve o JWT próprio da Locação (7 dias).
+app.post("/api/auth/sso", async (req, res) => {
+  try {
+    const { token } = req.body || {};
+    if (!token) return res.status(400).json({ error: "Token ausente" });
+    const BASE = process.env.SSO_BACKEND || "https://agentes-de-whatsapp-production.up.railway.app";
+
+    // 1) valida o token SSO no backend principal
+    const r = await fetch(BASE + "/painel/sso-resgatar", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, sistema: "locacao" })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!j || !j.ok || !j.usuario) return res.status(401).json({ error: "SSO inválido ou expirado" });
+
+    const email = String(j.usuario).toLowerCase();
+
+    // 2) acha o usuário interno na Locação pelo email
+    const { rows } = await pool.query("SELECT * FROM usuarios WHERE LOWER(email)=$1 AND ativo=true", [email]);
+    let user = rows[0];
+
+    // 3) se não existir, cria como interno aprovado (veio do Portal = confiável)
+    if (!user) {
+      const hash = await bcrypt.hash("sso_" + uuidv4(), 10); // senha aleatória (login será só por SSO)
+      const ins = await pool.query(
+        "INSERT INTO usuarios (nome,email,senha,role,ativo,aprovado,tipo_acesso,ref_id) VALUES ($1,$2,$3,'usuario',true,true,'interno',null) RETURNING *",
+        [j.nome || email, email, hash]
+      );
+      user = ins.rows[0];
+    }
+    if (!user.aprovado) return res.status(403).json({ error: "Conta não aprovada pelo administrador." });
+
+    // 4) gera o JWT próprio da Locação
+    const jwtToken = jwt.sign(
+      { id: user.id, nome: user.nome, email: user.email, role: user.role, tipoAcesso: user.tipo_acesso, refId: user.ref_id },
+      JWT_SECRET, { expiresIn: "7d" }
+    );
+    res.json({ token: jwtToken, user: { id: user.id, nome: user.nome, email: user.email, role: user.role, tipoAcesso: user.tipo_acesso, refId: user.ref_id } });
+  } catch (err) { console.error("[SSO locacao]", err.message); res.status(500).json({ error: err.message }); }
+});
+
 // ── USUÁRIOS ──────────────────────────────────────────────────────────────────
 app.get("/api/usuarios", auth, admin, async (req, res) => {
   const { rows } = await pool.query("SELECT id,nome,email,role,ativo,aprovado,tipo_acesso,ref_id,created_at FROM usuarios ORDER BY aprovado ASC, created_at DESC");
