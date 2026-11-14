@@ -1,17 +1,9 @@
 {
-  "name": "imobiliaria-frontend",
-  "version": "1.0.0",
+  "name": "administracao-de-aluguel-tela",
+  "version": "2.0.0",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "rm -rf dist && mkdir -p dist && cp -r public/. dist/",
+    "start": "serve dist -p $PORT"
   },
-  "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.2.1",
-    "vite": "^5.0.8"
-  }
+  "dependencies": { "serve": "^14.2.4" }
 }
