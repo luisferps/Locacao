@@ -129,7 +129,8 @@ async function telaInicio(){
     <div><span class="mut">Administração por mês</span><b>${brl(p.adm_mes)}</b></div>
     <div><span class="mut">Em atraso (com encargos)</span><b class="${p.atrasadas?'neg':''}">${p.atrasadas} · ${brl(p.atrasado_valor)}</b></div>
     <div><span class="mut">A repassar aos proprietários</span><b>${brl(p.a_repassar)}</b></div>
-    <div><span class="mut">Reajustes no próximo mês</span><b>${p.reajustes}</b></div></div>
+    <div><span class="mut">Reajustes no próximo mês</span><b>${p.reajustes}</b></div>
+    <div><span class="mut">Condomínio/IPTU sem comprovante</span><b class="${p.obrigacoes_pendentes?'neg':''}">${p.obrigacoes_pendentes}</b></div></div>
   <div class="mods">
     <div class="mod" style="border-left-color:#0d9488" onclick="location.hash='calendario'"><b>Calendário do mês</b><span>Dia 10, 20 e 30: quem pagou, quanto foi repassado e o que falta. Gera as cobranças do mês.</span></div>
     <div class="mod" style="border-left-color:#1d4ed8" onclick="location.hash='imoveis'"><b>Imóveis</b><span>${p.imoveis} imóvel(is). Ficha, contrato de administração, conta corrente do proprietário (acerto mensal) e documentos.</span></div>
@@ -259,11 +260,12 @@ async function telaLocacoes(){const L=await api('loc/locacoes');
   <div class="cgrid">${L.map(l=>`<div class="cb ${l.status!=='ativa'?'cinza':l.atrasadas?'vermelho':'verde'}" onclick="location.hash='locacao/${l.id}'"><b>${esc(l.apelido)}</b><span>${esc(l.locatario)}</span>
     <span class="v">${brl(l.aluguel)}</span><span class="mut">Dia ${l.dia_vencimento} · desde ${dbr(l.inicio)} · ${esc(l.indice)}</span>
     ${l.status!=='ativa'?`<span class="tag">Encerrada ${dbr(l.encerrada_em)}</span>`:l.atrasadas?`<span class="tag al">${l.atrasadas} em atraso</span>`:'<span class="tag ok">Em dia</span>'}</div>`).join('')||'<div class="mut">Nenhum contrato ainda.</div>'}</div>`}
+const RESP=[['inquilino','Do inquilino: ele paga direto e a Inerente confere'],['proprietario','Do proprietário: aluguel fixo e a Inerente paga'],['nao_tem','Não tem']];
 const C_LOC=[{k:'inicio',l:'Início do contrato',t:'date'},{k:'prazo_meses',l:'Prazo (meses)',t:'number',d:30},{k:'dia_vencimento',l:'Dia do vencimento',t:'number',d:10},{k:'aluguel',l:'Aluguel (R$)',t:'number'},
   {k:'indice',l:'Índice de reajuste',t:'sel',o:[['IGP-M','IGP-M'],['IPCA','IPCA'],['INPC','INPC'],['fixo','Percentual fixo'],['sem','Sem reajuste']]},{k:'reajuste_fixo_pct',l:'Reajuste fixo (% ao ano, se for fixo)',t:'number'},{k:'ultimo_reajuste',l:'Último reajuste feito (se já houve)',t:'date'},
   {k:'garantia',l:'Garantia',t:'sel',o:[['caucao','Caução (depósito)'],['fiador','Fiador'],['seguro_fianca','Seguro-fiança'],['titulo','Título de capitalização'],['sem_garantia','Sem garantia']]},{k:'garantia_info',l:'Dados da garantia (apólice, vigência, fiadores…)',w:1},
   {k:'caucao_valor',l:'Caução (R$)',t:'number'},{k:'caucao_data',l:'Data da caução',t:'date'},
-  {k:'condominio_inquilino',l:'Cobrar condomínio do inquilino no boleto',t:'chk'},{k:'condominio_valor',l:'Condomínio por mês (R$)',t:'number'},{k:'iptu_inquilino',l:'Cobrar IPTU do inquilino no boleto',t:'chk'},{k:'iptu_valor',l:'IPTU por mês (R$)',t:'number'},
+  {k:'condominio_resp',l:'Condomínio',t:'sel',o:RESP,d:'inquilino'},{k:'iptu_resp',l:'IPTU',t:'sel',o:RESP,d:'inquilino'},
   {k:'outros_descricao',l:'Outro item fixo no boleto (descrição)'},{k:'outros_valor',l:'Outro item (R$)',t:'number'},
   {k:'multa_pct',l:'Multa por atraso (%)',t:'number',d:10},{k:'juros_mes_pct',l:'Juros ao mês (%)',t:'number',d:1},{k:'cobranca_pct',l:'Custo de cobrança (%)',t:'number',d:10},{k:'cobranca_dias',l:'…a partir de quantos dias',t:'number',d:10},
   {k:'honorarios_pct',l:'Honorários de advogado (%)',t:'number',d:0},{k:'honorarios_dias',l:'…a partir de quantos dias',t:'number',d:30},{k:'obs',l:'Observações',t:'area',w:1}];
@@ -282,14 +284,32 @@ async function telaLocacao(id){LOC=await api('loc/locacao/'+id);const l=LOC.loca
    <div><span class="mut">Início · prazo</span><b>${dbr(l.inicio)} · ${l.prazo_meses||'—'} meses</b></div><div><span class="mut">Garantia</span><b>${esc({caucao:'Caução',fiador:'Fiador',seguro_fianca:'Seguro-fiança',titulo:'Título',sem_garantia:'Sem garantia'}[l.garantia]||l.garantia||'—')}${+l.caucao_valor?' '+brl(l.caucao_valor):''}</b></div>
    <div><span class="mut">Próximo reajuste (${esc(l.indice)})</span><b>${l.status==='ativa'&&l.indice!=='sem'?dbr(LOC.proximo_reajuste):'—'}</b></div><div><span class="mut">Situação</span><b>${l.status==='ativa'?'Ativa':'Encerrada em '+dbr(l.encerrada_em)}</b></div></div>
    ${l.telefone?`<div class="mut" style="margin-top:8px">Telefone: ${esc(l.telefone)} ${l.email?'· '+esc(l.email):''}</div>`:''}</div>
-   <div class="abas noprint"><button class="on" id="ab1" onclick="abaLoc(1)">Cobranças</button><button id="ab2" onclick="abaLoc(2)">Reajustes</button><button id="ab3" onclick="abaLoc(3)">Documentos</button></div><div id="abaloc"></div>`;abaLoc(1)}
-function abaLoc(n){[1,2,3].forEach(i=>$('#ab'+i).classList.toggle('on',i===n));const el=$('#abaloc'),l=LOC.locacao;
+   <div class="abas noprint"><button class="on" id="ab1" onclick="abaLoc(1)">Aluguel</button><button id="ab4" onclick="abaLoc(4)">Condomínio e IPTU</button><button id="ab2" onclick="abaLoc(2)">Reajustes</button><button id="ab3" onclick="abaLoc(3)">Documentos</button></div><div id="abaloc"></div>`;abaLoc(1)}
+function abaLoc(n){[1,2,3,4].forEach(i=>$('#ab'+i).classList.toggle('on',i===n));const el=$('#abaloc'),l=LOC.locacao;
+  if(n===4){const mesAtual=hoje().slice(0,7);
+    el.innerHTML=`<div class="card"><div class="lin"><span>Condomínio</span><b>${esc((RESP.find(r=>r[0]===l.condominio_resp)||[])[1]||'—')}</b></div><div class="lin"><span>IPTU</span><b>${esc((RESP.find(r=>r[0]===l.iptu_resp)||[])[1]||'—')}</b></div>
+     <div class="mut" style="margin-top:6px">Os itens de cada mês aparecem quando você gera a cobrança do mês. Do inquilino: anexe o comprovante que ele mandou. Do proprietário: registre o que a Inerente pagou (sai da conta do proprietário).</div></div>
+     <div class="cgrid">${LOC.obrigacoes.map(o=>{const atr=o.situacao==='pendente'&&o.competencia<mesAtual;return `<div class="cb ${o.situacao==='pago'?'verde':o.situacao==='dispensado'?'cinza':atr?'vermelho':'amarelo'}" onclick="modalObrig(${o.id})">
+      <b>${o.item==='condominio'?'Condomínio':'IPTU'} · ${nomeMes(o.competencia)}</b><span class="mut">${o.responsavel==='inquilino'?'Inquilino paga · Inerente confere':'Inerente paga pelo proprietário'}</span>
+      ${o.situacao==='pago'?`<span class="tag ok">${o.responsavel==='inquilino'?'Conferido':'Pago'} ${dbr(o.pago_em)}${+o.valor?' · '+brl(o.valor):''}</span>`:o.situacao==='dispensado'?`<span class="tag">Sem cobrança no mês</span>`:atr?'<span class="tag al">Sem comprovante</span>':'<span class="tag am">Aguardando</span>'}</div>`}).join('')||'<div class="mut">Nada ainda. Gere a cobrança do mês para aparecer.</div>'}</div>`;return}
   if(n===1)el.innerHTML=`<div class="cgrid">${LOC.mensalidades.map(m=>{const atr=m.situacao==='aberta'&&m.vencimento<hoje();
     return `<div class="cb ${m.situacao==='paga'?'verde':m.situacao==='cancelada'?'cinza':atr?'vermelho':'amarelo'}" onclick="modalMensalidade(${m.id})"><b>${nomeMes(m.competencia)}</b><span class="v">${brl(m.total)}</span>
     <span class="mut">Vence ${dbr(m.vencimento)}</span>${m.situacao==='paga'?`<span class="tag ok">Pago ${dbr(m.pago_em)} · ${brl(m.valor_pago)}</span>`:m.situacao==='cancelada'?'<span class="tag">Cancelada</span>':atr?`<span class="tag al">${m.encargos.dias} dias · hoje ${brl(m.encargos.total)}</span>`:'<span class="tag am">Em aberto</span>'}</div>`}).join('')||'<div class="mut">Nenhuma cobrança gerada. Use "Gerar cobrança" ou o Calendário do mês.</div>'}</div>`;
   if(n===2)el.innerHTML=`<div class="card noprint"><div class="bt">${l.status==='ativa'&&l.indice!=='sem'?`<button class="pri" onclick="modalReajuste(${l.id})">Calcular reajuste</button>`:''}</div></div><div class="cgrid">${LOC.reajustes.map(r=>`<div class="cb azul"><b>${dbr(r.data)}</b><span>${esc(r.indice)} ${String(r.percentual).replace('.',',')}%</span><span>${brl(r.valor_antes)} → <b>${brl(r.valor_depois)}</b></span></div>`).join('')||'<div class="mut">Nenhum reajuste registrado.</div>'}</div>`;
   if(n===3)desenhaDocs(el,'locacao',l.id,LOC.documentos)}
-function modalGerar(id){modal(`<h3>Gerar cobrança do mês</h3><label>Mês</label><input id="g_c" type="month" value="${hoje().slice(0,7)}"><div class="mut" style="margin-top:6px">Monta aluguel + condomínio + IPTU conforme o contrato. Mês que já tem cobrança fica como está.</div>
+function modalObrig(id){const o=LOC.obrigacoes.find(x=>x.id===id);const nome=o.item==='condominio'?'Condomínio':'IPTU';const inq=o.responsavel==='inquilino';
+  if(o.situacao!=='pendente')return modal(`<h3>${nome} · ${nomeMes(o.competencia)}</h3><div class="${o.situacao==='pago'?'ok':'info'}">${o.situacao==='pago'?(inq?'Conferido':'Pago pela Inerente')+' em '+dbr(o.pago_em)+(+o.valor?' · '+brl(o.valor):''):'Sem cobrança nesse mês'}</div>
+    ${o.documento_id?`<button onclick="abreDoc(${o.documento_id})">Ver comprovante</button> `:''}<button class="per" onclick="obrig(${id},'desfazer')">Desfazer</button> <button onclick="fecha()">Fechar</button>`);
+  modal(`<h3>${nome} · ${nomeMes(o.competencia)}</h3><div class="info">${inq?'O inquilino paga direto. Anexe o comprovante que ele mandou para marcar como conferido.':'A Inerente paga pelo proprietário. O valor sai da conta do proprietário deste imóvel.'}</div>
+  <div class="f2"><div><label>Data do pagamento</label><input id="o_d" type="date" value="${hoje()}"></div><div><label>Valor ${inq?'(opcional)':''}</label><input id="o_v" type="number" step="0.01"></div><div><label>Comprovante</label><input id="o_f" type="file"></div></div>
+  <div class="bt" style="margin-top:12px"><button class="pri" onclick="pagaObrig(${id},this)">${inq?'Marcar como conferido':'Registrar pagamento'}</button><button onclick="obrig(${id},'dispensar')">Não tem cobrança nesse mês</button><button onclick="fecha()">Cancelar</button></div>`)}
+async function pagaObrig(id,bt){const o=LOC.obrigacoes.find(x=>x.id===id);bt.disabled=true;try{let documento_id=null;const f=$('#o_f').files[0];
+  if(o.responsavel==='inquilino'&&!f){bt.disabled=false;return aviso('Anexe o comprovante que o inquilino mandou.')}
+  if(f)documento_id=(await sobeArquivo(f,'locacao',o.locacao_id,(o.item==='condominio'?'Comprovante de condomínio ':'Comprovante de IPTU ')+o.competencia)).id;
+  await api('loc/obrigacao/'+id+'/pagar',{method:'POST',body:{pago_em:val('o_d'),valor:val('o_v'),documento_id}});fecha();await telaLocacao(o.locacao_id);abaLoc(4)}finally{bt.disabled=false}}
+async function obrig(id,acao){if(acao==='desfazer'&&!confirm('Desfazer? Se a Inerente tinha pago, o valor volta para a conta do proprietário.'))return;const o=LOC.obrigacoes.find(x=>x.id===id);
+  await api('loc/obrigacao/'+id+'/'+acao,{method:'POST',body:{}});fecha();await telaLocacao(o.locacao_id);abaLoc(4)}
+function modalGerar(id){modal(`<h3>Gerar cobrança do mês</h3><label>Mês</label><input id="g_c" type="month" value="${hoje().slice(0,7)}"><div class="mut" style="margin-top:6px">Gera o aluguel do mês e os itens de condomínio e IPTU para conferir ou pagar, conforme o contrato. Mês que já tem cobrança fica como está.</div>
   <div class="bt" style="margin-top:12px"><button class="pri" onclick="gera(${id})">Gerar</button><button onclick="fecha()">Cancelar</button></div>`)}
 async function gera(id){const r=await api('loc/mensalidades/gerar',{method:'POST',body:{competencia:val('g_c'),locacao_id:id||null}});fecha();aviso(r.criadas?`${r.criadas} cobrança(s) criada(s).`:'Nada novo para criar nesse mês.');route()}
 function modalMensalidade(id){const m=LOC.mensalidades.find(x=>x.id===id);const e=m.encargos||{};
@@ -336,7 +356,8 @@ async function telaCalendario(c){const d=await api('loc/calendario/'+(c||''));co
      const cor=!cb?'':cb.situacao==='paga'?(+x.repassado?'verde':'azul'):atr?'vermelho':'amarelo';
      return `<div class="cb ${cor}" onclick="location.hash='locacao/${x.id}'"><b>${esc(x.apelido)}</b><span class="mut">${esc(x.locatario)}</span><span class="v">${brl(cb?cb.total:x.aluguel)}</span>
      <span>${!cb?'<span class="tag">Cobrança não gerada</span>':cb.situacao==='paga'?`<span class="tag ok">Recebido ${dbr(cb.pago_em)}</span>`:cb.situacao==='cancelada'?'<span class="tag">Cancelada</span>':atr?'<span class="tag al">Em atraso</span>':`<span class="tag am">Vence ${dbr(cb.vencimento)}</span>`}</span>
-     <span>${+x.repassado?`<span class="tag ok">Repassado ${brl(x.repassado)}</span>`:cb?.situacao==='paga'?`<span class="tag am">Falta repassar · saldo ${brl(x.saldo)}</span>`:''}</span></div>`}).join('')}</div>`).join('')||'<div class="mut">Nenhum contrato ativo nesse mês.</div>'}`}
+     <span>${+x.repassado?`<span class="tag ok">Repassado ${brl(x.repassado)}</span>`:cb?.situacao==='paga'?`<span class="tag am">Falta repassar · saldo ${brl(x.saldo)}</span>`:''}</span>
+     <span>${(x.obrigacoes||[]).map(o=>`<span class="tag ${o.situacao==='pago'?'ok':o.situacao==='dispensado'?'':'am'}">${o.item==='condominio'?'Cond.':'IPTU'} ${o.situacao==='pago'?'ok':o.situacao==='dispensado'?'—':o.responsavel==='inquilino'?'conferir':'pagar'}</span>`).join(' ')}</span></div>`}).join('')}</div>`).join('')||'<div class="mut">Nenhum contrato ativo nesse mês.</div>'}`}
 async function geraMes(c){if(!confirm('Gerar as cobranças de '+nomeMes(c)+' para todos os contratos ativos?'))return;const r=await api('loc/mensalidades/gerar',{method:'POST',body:{competencia:c}});aviso(`${r.criadas} cobrança(s) criada(s) de ${r.locacoes} contrato(s).`);telaCalendario(c)}
 
 /* ---------- inadimplência ---------- */

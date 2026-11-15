@@ -51,6 +51,13 @@ export function criaLocacao({ q, json, log, arquivos }) {
       percentual numeric not null, valor_antes numeric, valor_depois numeric, memoria jsonb, por text, em timestamptz default now())`);
     await q(`create table if not exists locacao.documentos(id serial primary key, entidade text not null, entidade_id int not null, tipo text, nome text not null,
       chave text not null, bytes int, por text, em timestamptz default now())`);
+    /* condomínio e IPTU: de quem é a responsabilidade (do inquilino: ele paga e a Inerente só confere; do proprietário: o aluguel é fixo e a Inerente paga, descontando do proprietário) */
+    await q(`alter table locacao.locacoes add column if not exists condominio_resp text not null default 'inquilino'`);
+    await q(`alter table locacao.locacoes add column if not exists iptu_resp text not null default 'inquilino'`);
+    await q(`create table if not exists locacao.obrigacoes(id serial primary key, locacao_id int not null references locacao.locacoes(id), imovel_id int not null references locacao.imoveis(id),
+      competencia text not null, item text not null check (item in ('condominio','iptu')), responsavel text not null check (responsavel in ('inquilino','proprietario')),
+      situacao text not null default 'pendente' check (situacao in ('pendente','pago','dispensado')), valor numeric, pago_em date, documento_id int, lancamento_id bigint, obs text,
+      criado_em timestamptz default now(), unique(locacao_id, competencia, item))`);
     /* registro interno (sem tela): data e hora, quem fez, o que era antes e como ficou — inclusão, alteração e exclusão */
     await q(`create table if not exists locacao.auditoria(id bigserial primary key, em timestamptz default now(), tabela text, operacao text, registro text, ator text, antes jsonb, depois jsonb)`);
     await q(`create or replace function locacao.audita() returns trigger language plpgsql as $f$
@@ -97,7 +104,7 @@ export function criaLocacao({ q, json, log, arquivos }) {
   const C_IMOVEL = ['apelido', 'tipo', 'endereco', 'unidade', 'condominio', 'administradora', 'matricula', 'inscricao_iptu', 'area', 'quartos', 'vagas', 'energia', 'agua', 'gas', 'extras', 'proprietario_id', 'pasta', 'obs', 'ativo'];
   const C_ADM = ['imovel_id', 'proprietario_id', 'inicio', 'fim', 'taxa_tipo', 'taxa_valor', 'intermediacao_tipo', 'intermediacao_valor', 'taxa_sobre_encargos', 'repasse_forma', 'repasse_chave', 'status', 'obs'];
   const C_LOC = ['imovel_id', 'administracao_id', 'locatario_id', 'fiadores', 'garantia', 'garantia_info', 'caucao_valor', 'caucao_data', 'inicio', 'prazo_meses', 'dia_vencimento', 'aluguel', 'indice',
-    'reajuste_fixo_pct', 'ultimo_reajuste', 'condominio_inquilino', 'condominio_valor', 'iptu_inquilino', 'iptu_valor', 'outros_valor', 'outros_descricao', 'multa_pct', 'juros_mes_pct',
+    'reajuste_fixo_pct', 'ultimo_reajuste', 'condominio_resp', 'iptu_resp', 'outros_valor', 'outros_descricao', 'multa_pct', 'juros_mes_pct',
     'cobranca_pct', 'cobranca_dias', 'honorarios_pct', 'honorarios_dias', 'obs'];
   const NUMS = ['area', 'taxa_valor', 'intermediacao_valor', 'caucao_valor', 'aluguel', 'reajuste_fixo_pct', 'condominio_valor', 'iptu_valor', 'outros_valor', 'multa_pct', 'juros_mes_pct', 'cobranca_pct', 'honorarios_pct'];
   const normaliza = b => { const o = { ...b }; for (const k of NUMS) if (k in o) o[k] = nb(o[k]); if ('documento' in o) o.documento = String(o.documento || '').replace(/\D/g, '') || null; return o; };
@@ -121,8 +128,6 @@ export function criaLocacao({ q, json, log, arquivos }) {
     const ini = String(l.inicio).slice(0, 10);
     if (compDe(ini) === comp && +ini.slice(8) > 1) { const dias = dm - +ini.slice(8) + 1; alug = R2(alug * dias / dm); obs = ` (proporcional ${dias} dias)`; }
     const it = [{ tipo: 'aluguel', descricao: 'Aluguel' + obs, valor: R2(alug) }];
-    if (l.condominio_inquilino && +l.condominio_valor) it.push({ tipo: 'condominio', descricao: 'Condomínio', valor: R2(l.condominio_valor) });
-    if (l.iptu_inquilino && +l.iptu_valor) it.push({ tipo: 'iptu', descricao: 'IPTU', valor: R2(l.iptu_valor) });
     if (+l.outros_valor) it.push({ tipo: 'outros', descricao: l.outros_descricao || 'Outros', valor: R2(l.outros_valor) });
     return it;
   }
@@ -136,6 +141,9 @@ export function criaLocacao({ q, json, log, arquivos }) {
       const r = await q(`insert into locacao.mensalidades(locacao_id, competencia, vencimento, itens, total) values ($1,$2,$3,$4,$5) on conflict (locacao_id, competencia) do nothing returning id`,
         [l.id, comp, vencDe(comp, l.dia_vencimento), JSON.stringify(it), total]);
       criadas += r.length;
+      for (const [item, resp] of [['condominio', l.condominio_resp], ['iptu', l.iptu_resp]])
+        if (resp === 'inquilino' || resp === 'proprietario')
+          await q(`insert into locacao.obrigacoes(locacao_id, imovel_id, competencia, item, responsavel) values ($1,$2,$3,$4,$5) on conflict (locacao_id, competencia, item) do nothing`, [l.id, l.imovel_id, comp, item, resp]);
     }
     return { criadas, locacoes: L.length };
   }
@@ -205,7 +213,8 @@ export function criaLocacao({ q, json, log, arquivos }) {
     const atr = await q(`select m.*, l.multa_pct, l.juros_mes_pct, l.cobranca_pct, l.cobranca_dias, l.honorarios_pct, l.honorarios_dias from locacao.mensalidades m join locacao.locacoes l on l.id=m.locacao_id where m.situacao='aberta' and m.vencimento < $1`, [hojeBR()]);
     const saldos = await q(`select imovel_id, sum(valor) s from locacao.lancamentos group by imovel_id`);
     const reaj = ativas.filter(l => l.indice !== 'sem' && proximoAniversario(l) <= addMeses(hojeBR(), 1));
-    const [cont] = await q(`select (select count(*) from locacao.imoveis where ativo)::int imoveis, (select count(*) from locacao.pessoas)::int pessoas`);
+    const [cont] = await q(`select (select count(*) from locacao.imoveis where ativo)::int imoveis, (select count(*) from locacao.pessoas)::int pessoas,
+      (select count(*) from locacao.obrigacoes where situacao='pendente' and competencia < to_char(now() - interval '3 hours','YYYY-MM'))::int obrigacoes_pendentes`);
     return {
       locacoes: ativas.length, aluguel_mes: R2(ativas.reduce((s, l) => s + +l.aluguel, 0)), adm_mes: R2(admMes),
       atrasadas: atr.length, atrasado_valor: R2(atr.reduce((s, m) => s + encargos(m, m).total, 0)),
@@ -318,7 +327,8 @@ export function criaLocacao({ q, json, log, arquivos }) {
         for (const x of ms) if (x.situacao === 'aberta') x.encargos = encargos(x, l);
         const rj = await q(`select * from locacao.reajustes where locacao_id=$1 order by data desc`, [id]);
         const docs = await q(`select id, tipo, nome, bytes, em from locacao.documentos where entidade='locacao' and entidade_id=$1 order by em desc`, [id]);
-        return json({ locacao: l, mensalidades: ms, reajustes: rj, documentos: docs, proximo_reajuste: l.status === 'ativa' ? proximoAniversario(l) : null });
+        const ob = await q(`select * from locacao.obrigacoes where locacao_id=$1 order by competencia desc, item`, [id]);
+        return json({ locacao: l, mensalidades: ms, obrigacoes: ob, reajustes: rj, documentos: docs, proximo_reajuste: l.status === 'ativa' ? proximoAniversario(l) : null });
       }
       if (a === 'locacao' && (m === 'POST' || m === 'PUT') && !acao) {
         if (m === 'POST') {
@@ -417,6 +427,36 @@ export function criaLocacao({ q, json, log, arquivos }) {
         return json({ ok: true, saldo: await saldoImovel(b.imovel_id) });
       }
 
+      /* condomínio e IPTU do mês: conferir o que o inquilino pagou / registrar o que a Inerente pagou pelo proprietário */
+      if (a === 'obrigacao' && id && m === 'POST') {
+        const [o] = await q(`select * from locacao.obrigacoes where id=$1`, [id]);
+        if (!o) return json({ erro: 'Item não encontrado' }, 404);
+        const nome = o.item === 'condominio' ? 'Condomínio' : 'IPTU', ref = `${o.competencia.slice(5)}/${o.competencia.slice(0, 4)}`;
+        if (acao === 'pagar') {
+          if (o.situacao !== 'pendente') return json({ erro: 'Esse item já foi resolvido.' }, 409);
+          if (!body.pago_em) return json({ erro: 'Informe a data do pagamento.' }, 400);
+          let lanc = null;
+          const v = R2(nb(body.valor));
+          if (o.responsavel === 'proprietario') {
+            if (!v) return json({ erro: 'Informe o valor pago pela Inerente.' }, 400);
+            [lanc] = await q(`insert into locacao.lancamentos(imovel_id, competencia, data, tipo, descricao, valor, origem, por, documento_id) values ($1,$2,$3,$4,$5,$6,'manual',$7,$8) returning id`,
+              [o.imovel_id, o.competencia, body.pago_em, o.item, `${nome} ${ref} (pago pela Inerente)`, -v, real, body.documento_id || null]);
+          }
+          await q(`update locacao.obrigacoes set situacao='pago', pago_em=$2, valor=$3, documento_id=$4, lancamento_id=$5, obs=$6 where id=$1`, [id, body.pago_em, v || null, body.documento_id || null, lanc?.id || null, limpa(body.obs)]);
+          await log(real, 'loc_obrigacao_paga', { id, item: o.item, competencia: o.competencia, responsavel: o.responsavel, valor: v });
+          return json({ ok: true });
+        }
+        if (acao === 'dispensar') {
+          await q(`update locacao.obrigacoes set situacao='dispensado', obs=$2 where id=$1 and situacao='pendente'`, [id, limpa(body.obs) || 'não há cobrança nesse mês']);
+          await log(real, 'loc_obrigacao_dispensada', { id }); return json({ ok: true });
+        }
+        if (acao === 'desfazer') {
+          if (o.lancamento_id) await q(`delete from locacao.lancamentos where id=$1`, [o.lancamento_id]);
+          await q(`update locacao.obrigacoes set situacao='pendente', pago_em=null, valor=null, documento_id=null, lancamento_id=null where id=$1`, [id]);
+          await log(real, 'loc_obrigacao_desfeita', { id }); return json({ ok: true });
+        }
+      }
+
       /* calendário do mês (a planilha "Calendário": dia 10/20/30, recebido, repassado) */
       if (a === 'calendario' && m === 'GET') {
         const comp = /^\d{4}-\d{2}$/.test(id || '') ? id : compDe(hojeBR());
@@ -425,7 +465,8 @@ export function criaLocacao({ q, json, log, arquivos }) {
           (select row_to_json(x) from (select id, situacao, total, valor_pago, to_char(vencimento,'YYYY-MM-DD') vencimento, to_char(pago_em,'YYYY-MM-DD') pago_em from locacao.mensalidades where locacao_id=l.id and competencia=$3) x) cobranca,
           (select coalesce(-sum(valor),0) from locacao.lancamentos where imovel_id=l.imovel_id and tipo='repasse' and competencia=$3) repassado,
           (select coalesce(sum(valor),0) from locacao.lancamentos where imovel_id=l.imovel_id and tipo='adm' and competencia=$3) adm,
-          (select coalesce(sum(valor),0) from locacao.lancamentos where imovel_id=l.imovel_id) saldo
+          (select coalesce(sum(valor),0) from locacao.lancamentos where imovel_id=l.imovel_id) saldo,
+          (select coalesce(json_agg(json_build_object('id',o.id,'item',o.item,'responsavel',o.responsavel,'situacao',o.situacao)),'[]') from locacao.obrigacoes o where o.locacao_id=l.id and o.competencia=$3) obrigacoes
           from locacao.locacoes l join locacao.imoveis i on i.id=l.imovel_id join locacao.pessoas p on p.id=l.locatario_id
           where l.inicio<=$2 and (l.status='ativa' or l.encerrada_em>=$1) order by l.dia_vencimento, i.apelido`, [ini, fim, comp]);
         return json({ competencia: comp, hoje: hojeBR(), itens: L });
