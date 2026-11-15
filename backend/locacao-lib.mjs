@@ -60,6 +60,7 @@ export function criaLocacao({ q, json, log, arquivos }) {
       chave text not null, bytes int, por text, em timestamptz default now())`);
     /* condomínio e IPTU: de quem é a responsabilidade (do inquilino: ele paga e a Inerente só confere; do proprietário: o aluguel é fixo e a Inerente paga, descontando do proprietário) */
     await q(`create unique index if not exists imoveis_apelido on locacao.imoveis(lower(trim(apelido)))`);
+    await q(`alter table locacao.locacoes add column if not exists garantia_dados jsonb not null default '{}'`); /* seguradora, apólice, vigência, título, onde está a caução */
     await q(`alter table locacao.locacoes add column if not exists multa_rescisao numeric not null default 3`); /* em número de aluguéis, cobrada proporcional ao prazo que falta */
     await q(`alter table locacao.locacoes add column if not exists condominio_resp text not null default 'inquilino'`);
     await q(`alter table locacao.locacoes add column if not exists iptu_resp text not null default 'inquilino'`);
@@ -113,7 +114,7 @@ export function criaLocacao({ q, json, log, arquivos }) {
   const C_IMOVEL = ['apelido', 'tipo', 'endereco', 'unidade', 'condominio', 'administradora', 'matricula', 'inscricao_iptu', 'area', 'quartos', 'vagas', 'energia', 'agua', 'gas', 'extras', 'proprietario_id', 'pasta', 'obs', 'ativo'];
   const C_ADM = ['imovel_id', 'proprietario_id', 'inicio', 'fim', 'taxa_tipo', 'taxa_valor', 'intermediacao_tipo', 'intermediacao_valor', 'taxa_sobre_encargos', 'repasse_forma', 'repasse_chave', 'status', 'obs'];
   const C_LOC = ['imovel_id', 'administracao_id', 'locatario_id', 'fiadores', 'garantia', 'garantia_info', 'caucao_valor', 'caucao_data', 'inicio', 'prazo_meses', 'dia_vencimento', 'aluguel', 'indice',
-    'reajuste_fixo_pct', 'ultimo_reajuste', 'condominio_resp', 'iptu_resp', 'multa_rescisao', 'outros_valor', 'outros_descricao', 'multa_pct', 'juros_mes_pct',
+    'reajuste_fixo_pct', 'ultimo_reajuste', 'condominio_resp', 'iptu_resp', 'multa_rescisao', 'garantia_dados', 'outros_valor', 'outros_descricao', 'multa_pct', 'juros_mes_pct',
     'cobranca_pct', 'cobranca_dias', 'honorarios_pct', 'honorarios_dias', 'obs'];
   const NUMS = ['multa_rescisao', 'area', 'taxa_valor', 'intermediacao_valor', 'caucao_valor', 'aluguel', 'reajuste_fixo_pct', 'condominio_valor', 'iptu_valor', 'outros_valor', 'multa_pct', 'juros_mes_pct', 'cobranca_pct', 'honorarios_pct'];
   const normaliza = b => { const o = { ...b }; for (const k of NUMS) if (k in o) o[k] = nb(o[k]); if ('documento' in o) o.documento = String(o.documento || '').replace(/\D/g, '') || null; return o; };
@@ -212,6 +213,13 @@ export function criaLocacao({ q, json, log, arquivos }) {
     return d;
   }
 
+  /* seguro-fiança ou título de capitalização vencido ou vencendo em 30 dias */
+  function alertaGarantia(l) {
+    const g = l.garantia_dados || {}, fim = l.garantia === 'seguro_fianca' ? g.fim : l.garantia === 'titulo' ? g.titulo_fim : null;
+    if (!fim || l.status !== 'ativa') return null;
+    const d = diasEntre(hojeBR(), fim);
+    return d < 0 ? { fim, situacao: 'vencida', dias: -d } : d <= 30 ? { fim, situacao: 'vencendo', dias: d } : null;
+  }
   function calculaSaida(l, data) {
     const ini = String(l.inicio).slice(0, 10), fim = addMeses(ini, +l.prazo_meses || 30);
     const indeterminado = data >= fim;
@@ -237,6 +245,7 @@ export function criaLocacao({ q, json, log, arquivos }) {
     return {
       locacoes: ativas.length, aluguel_mes: R2(ativas.reduce((s, l) => s + +l.aluguel, 0)), adm_mes: R2(admMes),
       atrasadas: atr.length, atrasado_valor: R2(atr.reduce((s, m) => s + encargos(m, m).total, 0)),
+      garantias: ativas.filter(l => alertaGarantia(l)).length,
       a_repassar: R2(saldos.filter(x => +x.s > 0).reduce((s, x) => s + +x.s, 0)), reajustes: reaj.length, ...cont,
     };
   }
@@ -347,8 +356,8 @@ export function criaLocacao({ q, json, log, arquivos }) {
       /* contrato de locação */
       if (a === 'locacoes' && m === 'GET') return json(await q(`select l.id, l.status, to_char(l.inicio,'YYYY-MM-DD') inicio, to_char(l.encerrada_em,'YYYY-MM-DD') encerrada_em, l.aluguel, l.dia_vencimento, l.prazo_meses, l.indice,
         l.garantia, i.apelido, i.id imovel_id, p.nome locatario, p.telefone,
-        (select count(*) from locacao.mensalidades x where x.locacao_id=l.id and x.situacao='aberta' and x.vencimento<current_date)::int atrasadas
-        from locacao.locacoes l join locacao.imoveis i on i.id=l.imovel_id join locacao.pessoas p on p.id=l.locatario_id order by l.status, i.apelido`));
+        l.garantia_dados, (select count(*) from locacao.mensalidades x where x.locacao_id=l.id and x.situacao='aberta' and x.vencimento<current_date)::int atrasadas
+        from locacao.locacoes l join locacao.imoveis i on i.id=l.imovel_id join locacao.pessoas p on p.id=l.locatario_id order by l.status, i.apelido`).then(L => L.map(l => ({ ...l, alerta_garantia: alertaGarantia(l) }))));
       if (a === 'locacao' && m === 'GET' && id && !acao) {
         const [l] = await q(`select l.*,
           i.apelido, p.nome locatario, p.telefone, p.email
@@ -359,7 +368,7 @@ export function criaLocacao({ q, json, log, arquivos }) {
         const rj = await q(`select * from locacao.reajustes where locacao_id=$1 order by data desc`, [id]);
         const docs = await q(`select id, tipo, nome, bytes, em from locacao.documentos where entidade='locacao' and entidade_id=$1 order by em desc`, [id]);
         const ob = await q(`select * from locacao.obrigacoes where locacao_id=$1 order by competencia desc, item`, [id]);
-        return json({ locacao: l, mensalidades: ms, obrigacoes: ob, reajustes: rj, documentos: docs, proximo_reajuste: l.status === 'ativa' ? proximoAniversario(l) : null, fim_prazo: addMeses(String(l.inicio).slice(0, 10), +l.prazo_meses || 30) });
+        return json({ locacao: l, mensalidades: ms, obrigacoes: ob, reajustes: rj, documentos: docs, proximo_reajuste: l.status === 'ativa' ? proximoAniversario(l) : null, fim_prazo: addMeses(String(l.inicio).slice(0, 10), +l.prazo_meses || 30), alerta_garantia: alertaGarantia(l) });
       }
       if (a === 'locacao' && (m === 'POST' || m === 'PUT') && !acao) {
         if (m === 'POST') {
@@ -377,6 +386,18 @@ export function criaLocacao({ q, json, log, arquivos }) {
           if (at) return json({ erro: 'Esse imóvel já tem um contrato de locação ativo. Encerre o anterior primeiro.' }, 409);
         }
         if ('aluguel' in b && !(+b.aluguel > 0)) return json({ erro: 'Aluguel inválido.' }, 400);
+        if (Array.isArray(b.fiadores)) {
+          b.fiadores = b.fiadores.filter(f => f && f.pessoa_id);
+          const inqId = +(b.locatario_id || (m === 'PUT' ? (await q(`select locatario_id from locacao.locacoes where id=$1`, [id]))[0]?.locatario_id : 0));
+          for (const f of b.fiadores) {
+            const [pp] = await q(`select id, nome from locacao.pessoas where id=$1`, [f.pessoa_id]);
+            if (!pp) return json({ erro: 'Fiador não encontrado no cadastro.' }, 400);
+            if (+f.pessoa_id === inqId) return json({ erro: 'O fiador não pode ser o próprio inquilino.' }, 400);
+            f.nome = pp.nome;
+          }
+          if (new Set(b.fiadores.map(f => +f.pessoa_id)).size !== b.fiadores.length) return json({ erro: 'Fiador repetido.' }, 400);
+        }
+        if (b.garantia === 'fiador' && Array.isArray(b.fiadores) && !b.fiadores.length) return json({ erro: 'Garantia por fiador: escolha pelo menos um fiador.' }, 400);
         if ('dia_vencimento' in b && !(+b.dia_vencimento >= 1 && +b.dia_vencimento <= 31)) return json({ erro: 'Dia de vencimento deve ser de 1 a 31.' }, 400);
         if (m === 'PUT') delete b.imovel_id; /* contrato não troca de imóvel */
         const r = await upsert('locacoes', C_LOC, b, m === 'PUT' ? id : null);
