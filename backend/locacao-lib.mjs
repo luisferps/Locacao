@@ -173,11 +173,7 @@ export function criaLocacao({ q, json, log, arquivos }) {
     if (!ad) return;
     const aluguel = itens.filter(x => x.tipo === 'aluguel').reduce((s, x) => s + +x.valor, 0);
     const base = aluguel + (ad.taxa_sobre_encargos ? +m.encargos_pagos || 0 : 0);
-    const [prim] = await q(`select min(competencia) c from locacao.mensalidades where locacao_id=$1 and situacao<>'cancelada'`, [l.id]);
-    if (prim.c === m.competencia && ad.intermediacao_tipo !== 'nenhuma') {
-      const v = ad.intermediacao_tipo === 'aluguel' ? +l.aluguel : ad.intermediacao_tipo === 'percentual' ? +l.aluguel * (+ad.intermediacao_valor || 0) / 100 : +ad.intermediacao_valor || 0;
-      if (v) return ins('intermediacao', 'Intermediação de locação', -v);
-    }
+    /* intermediação é serviço da imobiliária (corretagem): não é calculada aqui; só a taxa de administração do contrato */
     const adm = ad.taxa_tipo === 'fixo' ? +ad.taxa_valor : base * (+ad.taxa_valor || 0) / 100;
     if (adm) await ins('adm', 'Administração de locação', -adm);
   }
