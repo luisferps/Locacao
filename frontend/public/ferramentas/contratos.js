@@ -162,7 +162,7 @@ function htmlLocacao(d){
       `As partes registram que a posse do imóvel é entregue ao LOCATÁRIO em ${DBR(ini)} e que o primeiro aluguel, referente ao período de ${DBR(ini)} a ${DBR(addD(pv,-1))}, vence em ${DBR(pv)}, na forma da Cláusula Segunda.`])
     :pars(['A devolução do imóvel antes do término do prazo sujeitará o LOCATÁRIO à multa rescisória prevista na Cláusula Vigésima Primeira, reduzida proporcionalmente ao período já cumprido, na forma do artigo 4º da Lei nº 8.245/91.',`As partes registram que a posse do imóvel é entregue ao LOCATÁRIO em ${DBR(ini)} e que o primeiro aluguel, referente ao período de ${DBR(ini)} a ${DBR(addD(pv,-1))}, vence em ${DBR(pv)}, na forma da Cláusula Segunda.`]));
   K('DOS REAJUSTES DO CONTRATO',l.indice==='fixo'?p(`O valor do aluguel será reajustado anualmente, sendo o primeiro reajuste devido em ${DBR(addM(l.inicio,12))} e os seguintes a cada 12 (doze) meses contados dessa data, pelo percentual fixo de ${P(+l.reajuste_fixo_pct||0)} ao ano, incidindo sobre o valor do aluguel vigente.`)
-    :p(`O valor do aluguel será reajustado anualmente, sendo o primeiro reajuste devido em ${DBR(addM(l.inicio,12))} e os seguintes a cada 12 (doze) meses contados dessa data, pela variação acumulada do ${idxNome}, no período de 12 (doze) meses imediatamente anterior, incidindo sobre o valor do aluguel vigente.`),
+    :p(`O valor do aluguel será reajustado anualmente, sendo o primeiro reajuste devido em ${DBR(addM(l.inicio,12))} e os seguintes a cada 12 (doze) meses contados dessa data, por acordo entre as partes, de acordo com os preços de mercado. Não havendo acordo quanto ao novo valor, fica assegurado ao LOCADOR, no mínimo, o reajuste pela variação acumulada do ${idxNome}, no período de 12 (doze) meses imediatamente anterior, incidindo sobre o valor do aluguel vigente.`),
     pars(['Na hipótese de variação negativa do índice no período, o valor do aluguel será mantido inalterado, não havendo redução.',`Na hipótese de extinção, suspensão ou não divulgação do ${indice}, será adotado o índice que legalmente o substituir e, na ausência deste, o ${indice==='IPCA'?'INPC':'IPCA'}.`,'Se em virtude de lei subsequente à assinatura deste contrato vier a ser permitida a correção do valor do aluguel em período inferior ao indicado no mesmo, as partes concordam, desde já, que a correção seja feita no menor prazo permitido pela nova lei.']));
   K('DA DEVOLUÇÃO DO IMÓVEL E OUTRAS AVENÇAS',p('O LOCATÁRIO deverá restituir o imóvel, bem como entregar as chaves, objeto deste contrato, na data de seu vencimento, completamente desocupado e nas mesmas condições e estado de conservação em que o recebeu, ressalvado o desgaste natural decorrente do uso normal, e mediante o devido acerto final de todos os débitos locatícios junto ao ADMINISTRADOR.'),
     pars(['Não havendo a devolução do imóvel conforme indicado acima, sem manifestação das partes contratantes, a partir da data de seu vencimento estará o mesmo prorrogado por prazo indeterminado, conforme preceitua a Lei 8.245/91, sendo que neste caso, salvo acordo escrito entre as partes, caberá a quem tomar a iniciativa da rescisão contratual a comunicação à outra parte com 30 (trinta) dias de antecedência para a devolução do imóvel.',
@@ -263,11 +263,84 @@ function htmlAdministracao(d){
     DIR(`${cid}, ${dt}.`),assin(prop?.nome,'OUTORGANTE'));
   return out.join('\n')}
 
+
+/* ================= DOCUMENTOS DA LOCAÇÃO ================= */
+const imovelTxt=d=>d.imovel?.descricao_contrato?es(d.imovel.descricao_contrato):PF('descrição do imóvel');
+const locs=d=>(d.locatarios||[]);
+const qualLocs=d=>locs(d).length?locs(d).map(qualif).join(', e '):PF('locatário');
+const assAdm=()=>assin('LUIS FERNANDO PIMENTEL SOARES','ADMINISTRADOR, procurador do LOCADOR · CRECI-GO 19.898');
+const assLocs=d=>locs(d).map(x=>assin(x.nome,'LOCATÁRIO')).join('');
+const cidade=d=>es(d.imovel?.cidade||'Goiânia');
+const tabela=(cab,linhas,tot)=>`<table style="width:100%;border-collapse:collapse;margin:6px 0 12px;font-size:12px"><tr>${cab.map(c=>`<th style="border:1px solid #999;padding:3px 6px;background:#E8EEF4">${c}</th>`).join('')}</tr>${linhas.map(l=>`<tr>${l.map((c,i)=>`<td style="border:1px solid #999;padding:3px 6px;${i===l.length-1?'text-align:right':''}">${c}</td>`).join('')}</tr>`).join('')}${tot?`<tr>${tot.map((c,i)=>`<td style="border:1px solid #999;padding:3px 6px;background:#F4F6F8;font-weight:bold;${i===tot.length-1?'text-align:right':''}">${c}</td>`).join('')}</tr>`:''}</table>`;
+
+function docRetificacao(d,o){const it=String(o.itens||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  const grupos=[];for(const s of it){const m=s.match(/^([^:]{2,60}):\s*(.+)$/);const c=m?m[1].trim().toUpperCase():'ITENS';const g=grupos.find(x=>x.c===c)||(grupos.push({c,L:[]}),grupos.at(-1));g.L.push(m?m[2]:s)}
+  return [H(`${o.numero||1}º TERMO DE RETIFICAÇÃO DE VISTORIA`),V,
+    p(`Pelo presente termo, retificam-se e/ou acrescentam-se os itens abaixo, não observados no LAUDO DE VISTORIA do imóvel realizado em ${o.data_vistoria?DBR(o.data_vistoria):PF('data da vistoria')}${o.vistoriador?' por '+es(o.vistoriador):''}, que integra o contrato de locação firmado em ${DBR(d.locacao.inicio)}, na forma da Cláusula Nona do contrato. Os demais itens do laudo permanecem inalterados.`),
+    T('IMÓVEL:'),p(imovelTxt(d)),T(locs(d).length>1?'LOCATÁRIOS:':'LOCATÁRIO:'),p(qualLocs(d)+'.'),
+    ...(grupos.length?grupos.flatMap(g=>[T(es(g.c)),...g.L.map(x=>p('• '+es(x)))]):[p(PF('itens retificados'))]),
+    p('As partes declaram que, com as retificações acima, o laudo de vistoria passa a refletir o estado do imóvel na entrega das chaves, servindo de referência para a vistoria final.'),
+    DIR(`${cidade(d)}, ${dExt(o.data||new Date().toISOString())}.`),assLocs(d),assAdm()].join('\n')}
+
+function docEntregaChaves(d,o){const devol=o.sentido==='devolve';
+  return [H(devol?'TERMO DE DEVOLUÇÃO DE CHAVES':'TERMO DE ENTREGA DE CHAVES'),V,T('IMÓVEL:'),p(imovelTxt(d)),
+    devol?p(`Pelo presente instrumento, ${qualLocs(d)}, na qualidade de LOCATÁRIO, devolve nesta data ao LOCADOR, ${qualif(d.proprietario)}, neste ato representado por seu procurador e ADMINISTRADOR, LUIS FERNANDO PIMENTEL SOARES, CRECI-GO 19.898, as chaves do imóvel acima${o.itens?', a saber: '+es(o.itens):''}. O recebimento das chaves não implica quitação das obrigações do contrato, que serão apuradas na vistoria final e no acerto final, na forma do contrato de locação.`)
+         :p(`Pelo presente instrumento, ${qualLocs(d)}, na qualidade de LOCATÁRIO, após vistoria do imóvel, declara neste ato ter recebido do LOCADOR, ${qualif(d.proprietario)}, neste ato representado por seu procurador e ADMINISTRADOR, LUIS FERNANDO PIMENTEL SOARES, CRECI-GO 19.898, as chaves do imóvel acima${o.itens?', a saber: '+es(o.itens):''}, ficando imitido na posse do imóvel a partir desta data.`),
+    DIR(`${cidade(d)}, ${dExt(o.data||new Date().toISOString())}.`),assLocs(d),assAdm()].join('\n')}
+
+function docNotificacao(d,o){const L=o.abertas||[],tot=L.reduce((s,x)=>s+ +x.total,0),l=d.locacao;
+  return [H('NOTIFICAÇÃO EXTRAJUDICIAL POR FALTA DE PAGAMENTO'),V,DIR(`${cidade(d)}, ${dExt(o.data)}.`),
+    p(`<b>A/C:</b> ${locs(d).map(x=>es(String(x.nome).toUpperCase())).join(' e ')||PF('locatário')}`),p('<b>Ref.:</b> Contrato de Locação – falta de pagamento.'),
+    p('Pelo presente termo, para os efeitos do artigo 726 do Código de Processo Civil e da Lei nº 8.245/91, NOTIFICO Vossa Senhoria do que segue:'),
+    p(`Foi firmado contrato de locação do imóvel ${imovelTxt(d)}, com aluguel de ${R(l.aluguel)}, com vencimento todo dia ${N(l.dia_vencimento)} de cada mês. Entretanto, até a presente data, os seguintes valores encontram-se em aberto, já com multa, juros e encargos previstos no contrato:`),
+    tabela(['Vencimento','Dias de atraso','Valor atualizado'],L.map(x=>[DBR(x.vencimento),String(x.dias),'R$ '+BRL(x.total)]),['TOTAL PARA PAGAMENTO EM '+DBR(o.data),'','R$ '+BRL(tot)]),
+    o.garantia?p(es(o.garantia)):'',
+    o.proposta?p(es(o.proposta)):'',
+    p(`O pagamento deve ser feito pelo boleto atualizado emitido pelo ADMINISTRADOR ou por transferência para a conta da administradora ${CONTA}.`),
+    p(`Assim, respeitando a legislação em vigor, solicitamos que, no prazo máximo de <b>${es(o.prazo||'48 (QUARENTA E OITO) HORAS')}</b> contados do recebimento desta, Vossa Senhoria se manifeste de forma expressa, regularizando o débito. Decorrido o prazo sem manifestação, serão adotadas as medidas extrajudiciais e judiciais cabíveis, inclusive ação de despejo por falta de pagamento e inscrição nos órgãos de proteção ao crédito, na forma do contrato.`),
+    p('Certo de sua compreensão, coloco-me à disposição para o que for necessário.'),p('Atenciosamente,'),
+    assin('LUIS FERNANDO PIMENTEL SOARES','Administrador do Contrato de Locação · CRECI-GO 19.898'),V,p('Recebi em ____/____/________. Assinatura: ___________________________________')].join('\n')}
+
+function docConfissao(d,o){const P2=o.parcelas||[],ent=+o.entrada||0;
+  return [H('INSTRUMENTO PARTICULAR DE CONFISSÃO E PARCELAMENTO DE DÍVIDA'),V,
+    T(locs(d).length>1?'DEVEDORES:':'DEVEDOR:'),p(qualLocs(d)+(locs(d).length>1?', doravante denominados, em conjunto, DEVEDOR, respondendo solidariamente;':', doravante denominado DEVEDOR;')),
+    T('CREDOR:'),p(`${qualif(d.proprietario)}, doravante denominado CREDOR, neste ato representado por seu procurador e administrador da locação, ${ADM};`),
+    p('ajustam entre si o presente Instrumento de Confissão e Parcelamento de Dívida, que se regerá pelas cláusulas seguintes:'),
+    p(`<b>Cláusula Primeira</b> – O DEVEDOR reconhece expressamente que deve ao CREDOR o valor total de ${R(o.valor)}, já atualizado com multa, juros, correção monetária e encargos previstos no contrato de locação, originado ${es(o.origem||'de aluguéis e encargos em aberto')} do contrato de locação do imóvel ${imovelTxt(d)}, firmado em ${DBR(d.locacao.inicio)}.`),
+    p(`<b>Parágrafo primeiro</b> – O DEVEDOR pagará o débito ${ent?`com entrada de ${R(ent)} em ${DBR(o.entrada_data)} e o saldo `:''}em ${N(P2.length)} parcela(s), por boleto bancário emitido pelo ADMINISTRADOR ou transferência para a conta da administradora ${CONTA}, nos seguintes vencimentos:`),
+    tabela(['Parcela','Vencimento','Valor'],P2.map((x,i)=>[`${i+1}/${P2.length}`,DBR(x.vencimento),'R$ '+BRL(x.valor)]),['TOTAL','','R$ '+BRL(P2.reduce((s,x)=>s+ +x.valor,0)+ent)]),
+    p(`<b>Parágrafo segundo</b> – Com o pagamento ${ent?'da entrada':'da primeira parcela'}, o CREDOR providenciará a retirada do nome do DEVEDOR dos órgãos de proteção ao crédito, exclusivamente quanto ao débito ora confessado.`),
+    p('<b>Cláusula Segunda</b> – O não pagamento de qualquer parcela no vencimento sujeitará o DEVEDOR à multa de 10% (dez por cento) sobre o valor da parcela, juros de 1% (um por cento) ao mês, correção monetária e honorários advocatícios de 20% (vinte por cento), além do vencimento antecipado das parcelas vincendas, independentemente de aviso, podendo o CREDOR protestar o débito, incluir o nome do DEVEDOR nos órgãos de proteção ao crédito e promover a cobrança judicial, valendo este instrumento como título executivo extrajudicial, nos termos do artigo 784, inciso III, do Código de Processo Civil.'),
+    p('<b>Cláusula Terceira</b> – Este acordo não importa novação. Enquanto não quitado integralmente, permanecem válidas as garantias e demais obrigações do contrato de locação; a tolerância do CREDOR com atrasos é mera liberalidade.'),
+    p('<b>Cláusula Quarta</b> – Cumprido integralmente o presente acordo, as partes dão-se mútua e recíproca quitação quanto ao débito aqui confessado.'),
+    p('<b>Cláusula Quinta</b> – O presente é celebrado em caráter irrevogável e irretratável, obrigando as partes, seus herdeiros e sucessores.'),
+    p(`<b>Cláusula Sexta</b> – As partes elegem o foro da comarca de ${cidadeUF(d.administracao?.foro||d.imovel?.cidade)} para dirimir quaisquer controvérsias oriundas deste instrumento.`),
+    p('Por estarem assim justos e contratados, firmam o presente em 02 (duas) vias de igual teor, na presença de 02 (duas) testemunhas.'),
+    DIR(`${cidade(d)}, ${dExt(o.data)}.`),...locs(d).map(x=>assin(x.nome,'DEVEDOR')),assin(d.proprietario?.nome,'CREDOR, representado por seu procurador LUIS FERNANDO PIMENTEL SOARES'),testemunhas()].join('\n')}
+
+function docAcertoFinal(d,o){const c=o.caucao||{},itens=(o.itens||[]).filter(x=>+x.valor),deb=itens.reduce((s,x)=>s+ +x.valor,0);
+  const cred=(+c.valor||0)+(+c.rendimento||0),saldo=Math.round((cred-deb)*100)/100;
+  const linhas=[];if(+c.valor)linhas.push(['Caução depositada',c.de?'depositada em '+DBR(c.de):'','R$ '+BRL(c.valor)]);
+  if(+c.valor)linhas.push(['Rendimento da poupança sobre a caução',c.meses?`${c.meses} mês(es) · ${String(c.percentual||0).replace('.',',')}% · de ${DBR(c.de)} a ${DBR(o.data)}`:'','R$ '+BRL(c.rendimento||0)]);
+  for(const x of itens)linhas.push([es(x.descricao),es(x.referencia||''),'– R$ '+BRL(x.valor)]);
+  return [H('ACERTO FINAL DE LOCAÇÃO E DEVOLUÇÃO DE CAUÇÃO'),V,T('IMÓVEL:'),p(imovelTxt(d)),T(locs(d).length>1?'LOCATÁRIOS:':'LOCATÁRIO:'),p(qualLocs(d)+'.'),
+    p(`Encerrada a locação com a entrega das chaves em ${DBR(o.data)}, as partes apuram o acerto final da locação, na forma do contrato, conforme abaixo:`),
+    tabela(['Item','Referência','Valor'],linhas,[saldo>=0?'SALDO A DEVOLVER AO LOCATÁRIO':'SALDO A PAGAR PELO LOCATÁRIO','','R$ '+BRL(Math.abs(saldo))]),
+    +c.valor?p(`${locs(d).length>1?'Declaramos':'Declaro'} que ${saldo>=0?`${locs(d).length>1?'recebemos':'recebi'} de volta`:'foi utilizado'} o valor da caução deixado no início da locação, de ${R(c.valor)}, acrescido de ${R(c.rendimento||0)} de rendimento da poupança no período, totalizando ${R(cred)}, do qual foram abatidos os débitos de ${locs(d).length>1?'nossa':'minha'} responsabilidade acima discriminados, que ${locs(d).length>1?'reconhecemos':'reconheço'} e ${locs(d).length>1?'assumimos':'assumo'} para todos os efeitos.`):'',
+    saldo>=0?p(`O saldo de ${R(saldo)} ${saldo>0?(o.forma?'é devolvido ao LOCATÁRIO por '+es(o.forma):'é devolvido ao LOCATÁRIO nesta data'):'é zero'}. Com este acerto, as partes dão-se mútua e plena quitação, nada mais tendo a receber ou pagar uma à outra em razão da locação.`)
+      :p(`O LOCATÁRIO reconhece dever o saldo de ${R(-saldo)}, que se obriga a pagar ${o.forma?es(o.forma):'em até 10 (dez) dias'}, sob pena de cobrança na forma do contrato. Pago o saldo, as partes dão-se mútua e plena quitação.`),
+    DIR(`${cidade(d)}, ${dExt(o.data)}.`),assLocs(d),assAdm()].join('\n')}
+
+function docRecibo(d,o){
+  return [H('RECIBO'),V,p(`Recebi de ${o.pagador?es(o.pagador):qualLocs(d)} a importância de ${R(o.valor)}${o.forma?', por '+es(o.forma):''}, referente a ${es(o.referente||'aluguel')} do imóvel ${imovelTxt(d)}, dando por esse valor a devida quitação.`),
+    p('Recebido por LUIS FERNANDO PIMENTEL SOARES, CPF nº 023.896.971-19, CRECI-GO nº 19.898, na qualidade de administrador do contrato de locação e procurador do LOCADOR.'),
+    DIR(`${cidade(d)}, ${dExt(o.data)}.`),assin('LUIS FERNANDO PIMENTEL SOARES','Administrador · CRECI-GO 19.898')].join('\n')}
+
 /* ================= Word (mesmo conversor do Beira Rio) ================= */
 const carrega=src=>new Promise((ok,er)=>{if(window.docx)return ok();const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=er;document.head.appendChild(s)});
 async function htmlParaDocx(html,rodape){
   await carrega('ferramentas/docx.js');
-  const {Document,Packer,Paragraph,TextRun,AlignmentType,ImageRun,Header,Footer,PageNumber,HorizontalPositionRelativeFrom,VerticalPositionRelativeFrom,TextWrappingType,HorizontalPositionAlign,VerticalPositionAlign}=window.docx;
+  const {Document,Packer,Paragraph,TextRun,AlignmentType,ImageRun,Table,TableRow,TableCell,WidthType,BorderStyle,ShadingType,Header,Footer,PageNumber,HorizontalPositionRelativeFrom,VerticalPositionRelativeFrom,TextWrappingType,HorizontalPositionAlign,VerticalPositionAlign}=window.docx;
   const FT='Arial';const AL={center:AlignmentType.CENTER,right:AlignmentType.RIGHT,left:AlignmentType.LEFT,justify:AlignmentType.JUSTIFIED};
   const alDe=(el,def)=>{const a=(el.style&&el.style.textAlign)||el.getAttribute?.('align')||'';return AL[a]||def};
   const runs=(node,st,size)=>{const out=[];const walk=(n,s)=>{if(n.nodeType===3){const t=n.textContent.replace(/\s+/g,' ');if(t)out.push(new TextRun({text:t,font:FT,size,bold:s.b,italics:s.i,underline:s.u?{}:undefined,highlight:s.h?'yellow':undefined}));return}
@@ -276,6 +349,11 @@ async function htmlParaDocx(html,rodape){
       for(const k of n.childNodes)walk(k,ns)};for(const k of node.childNodes)walk(k,st);return out};
   const kids=[];
   const bloco=el=>{const tg=el.tagName;
+    if(tg==='TABLE'){const trs=[...el.querySelectorAll('tr')];if(!trs.length)return;const n0=trs[0].children.length,W=Array(n0).fill(Math.floor(9600/n0));const bd={style:BorderStyle.SINGLE,size:4,color:'999999'};
+      kids.push(new Table({width:{size:9600,type:WidthType.DXA},columnWidths:W,rows:trs.map(tr=>new TableRow({children:[...tr.children].map((td,i)=>{const th=td.tagName==='TH',neg=/font-weight:\s*bold/.test(td.getAttribute('style')||'');
+        return new TableCell({borders:{top:bd,bottom:bd,left:bd,right:bd},width:{size:W[i],type:WidthType.DXA},shading:th?{fill:'E8EEF4',type:ShadingType.CLEAR,color:'auto'}:neg?{fill:'F4F6F8',type:ShadingType.CLEAR,color:'auto'}:undefined,margins:{top:40,bottom:40,left:70,right:70},
+          children:[new Paragraph({alignment:i===tr.children.length-1&&!th?AlignmentType.RIGHT:th?AlignmentType.CENTER:AlignmentType.LEFT,children:runs(td,{b:th||neg},18)})]})})}))}));
+      kids.push(new Paragraph({spacing:{after:80},children:[]}));return}
     if(tg==='DIV'||tg==='SECTION'){[...el.childNodes].forEach(x=>x.nodeType===1?bloco(x):x.textContent.trim()&&kids.push(new Paragraph({children:[new TextRun({text:x.textContent.trim(),font:FT,size:20})]})));return}
     if(tg==='UL'||tg==='OL'){[...el.children].forEach((li,i)=>kids.push(new Paragraph({spacing:{after:80,line:276},alignment:AlignmentType.JUSTIFIED,children:[new TextRun({text:(tg==='OL'?(i+1)+'. ':'• '),font:FT,size:20}),...runs(li,{},20)]})));return}
     const h1=tg==='H1',h=/^H\d$/.test(tg);
@@ -289,5 +367,5 @@ async function htmlParaDocx(html,rodape){
     children:kids}]});
   return Packer.toBlob(doc)}
 
-window.Contratos={htmlLocacao,htmlAdministracao,htmlParaDocx,primeiroVenc};
+window.Contratos={htmlLocacao,htmlAdministracao,htmlParaDocx,primeiroVenc,docRetificacao,docEntregaChaves,docNotificacao,docConfissao,docAcertoFinal,docRecibo};
 })();

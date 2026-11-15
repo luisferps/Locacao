@@ -113,10 +113,13 @@ export function criaLocacao({ q, json, log, arquivos }) {
         return NEW;
       exception when others then return coalesce(NEW, OLD);
       end $f$`);
+    /* documentos gerados da locação (retificação de vistoria, entrega de chaves, notificação, confissão de dívida, acerto final, recibo) */
+    await q(`create table if not exists locacao.documentos_gerados(id serial primary key, locacao_id int not null references locacao.locacoes(id), tipo text not null,
+      titulo text not null, dados jsonb not null default '{}', html text not null, por text, em timestamptz default now())`);
     /* texto do contrato gerado/editado (administração ou locação) — a versão editada fica guardada como no Beira Rio */
     await q(`create table if not exists locacao.contratos_texto(id serial primary key, entidade text not null check (entidade in ('locacao','administracao')), entidade_id int not null,
       html text not null, por text, em timestamptz default now(), unique(entidade, entidade_id))`);
-    for (const t of ['pessoas', 'imoveis', 'administracoes', 'administracao_imoveis', 'locacoes', 'mensalidades', 'lancamentos', 'reajustes', 'documentos', 'obrigacoes', 'contratos_texto'])
+    for (const t of ['pessoas', 'imoveis', 'administracoes', 'administracao_imoveis', 'locacoes', 'mensalidades', 'lancamentos', 'reajustes', 'documentos', 'obrigacoes', 'contratos_texto', 'documentos_gerados'])
       await q(`do $d$ begin
         if exists (select 1 from pg_trigger where tgname = 'audita_loc_${t}') then execute 'drop trigger audita_loc_${t} on locacao.${t}'; end if;
         if not exists (select 1 from pg_trigger where tgname = 'registro_loc_${t}') then
@@ -298,6 +301,23 @@ export function criaLocacao({ q, json, log, arquivos }) {
     const fator = L.reduce((f, x) => f * (1 + x.pct / 100), 1);
     return { meses: L, percentual: Math.round((fator - 1) * 10000) / 100 };
   }
+  /* rendimento da caução pela poupança (Banco Central, série 195): rende a cada aniversário mensal do depósito */
+  async function rendimentoPoupanca(valor, de, ate) {
+    de = String(de).slice(0, 10); ate = String(ate).slice(0, 10);
+    let ani = +de.slice(8) > 28 ? vencDe(compDe(addMeses(de.slice(0, 8) + '01', 1)), 1) : de;
+    if (ate <= ani) return { valor: R2(valor), rendimento: 0, meses: 0, percentual: 0, de, ate };
+    const br = d => d.split('-').reverse().join('/');
+    const r = await fetch(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.195/dados?formato=json&dataInicial=${br(ani)}&dataFinal=${br(ate)}`, { headers: { accept: 'application/json' } });
+    if (!r.ok) throw new Error(`Não consegui buscar a poupança no Banco Central (erro ${r.status})`);
+    const L = await r.json(), mapa = new Map(L.map(x => [x.data.split('/').reverse().join('-'), +String(x.valor).replace(',', '.')]));
+    let f = 1, n = 0; const meses = [];
+    for (let prox = addMeses(ani, 1); prox <= ate; ani = prox, prox = addMeses(ani, 1)) {
+      const pct = mapa.get(ani); if (pct === undefined) continue;
+      f *= 1 + pct / 100; n++; meses.push({ de: ani, ate: prox, pct });
+    }
+    const rend = R2(valor * (f - 1));
+    return { valor: R2(valor), rendimento: rend, total: R2(+valor + rend), meses: n, percentual: Math.round((f - 1) * 10000) / 100, de, ate, detalhe: meses };
+  }
   function proximoAniversario(l) {
     const ini = String(l.inicio).slice(0, 10), ult = l.ultimo_reajuste ? String(l.ultimo_reajuste).slice(0, 10) : ini;
     let n = 1, d = addMeses(ini, 12);
@@ -316,12 +336,19 @@ export function criaLocacao({ q, json, log, arquivos }) {
     const ini = String(l.inicio).slice(0, 10), fim = addMeses(ini, +l.prazo_meses || 30);
     const indeterminado = data >= fim;
     const comp = compDe(data), [a, mm] = comp.split('-').map(Number), dm = ultimoDia(a, mm);
-    const dias_usados = +data.slice(8);
-    const proporcional = R2(+l.aluguel * dias_usados / dm);
+    let dias_usados = +data.slice(8), proporcional = R2(+l.aluguel * dias_usados / dm);
+    if (l.primeiro_vencimento) { /* aluguel vencido: cobra os dias desde o último vencimento, a 1/30 do aluguel por dia */
+      let ult = vencDe(comp, l.dia_vencimento); if (ult > data) ult = vencDe(somaMes(comp, -1), l.dia_vencimento);
+      if (ult < String(l.primeiro_vencimento).slice(0, 10)) ult = String(l.data_chaves || l.inicio).slice(0, 10);
+      dias_usados = Math.max(0, diasEntre(ult, data)); proporcional = R2(+l.aluguel / 30 * dias_usados);
+    }
     const dias_prazo = Math.max(1, diasEntre(ini, fim)), dias_restantes = indeterminado ? 0 : Math.max(0, diasEntre(data, fim));
-    const multa = indeterminado ? 0 : R2((+l.multa_rescisao || 0) * +l.aluguel * dias_restantes / dias_prazo);
+    /* saída nos marcos do 12º, 24º, 36º… mês (quando o contrato prevê) não tem multa */
+    let marco = null;
+    if (l.saida_sem_multa_marcos && (+l.prazo_meses || 0) % 12 === 0) for (let k = 12; k <= +l.prazo_meses; k += 12) { const mk = addMeses(ini, k); const d = diasEntre(data, mk); if (d >= 0 && d <= 1) marco = k; }
+    const multa = indeterminado || marco ? 0 : R2((+l.multa_rescisao || 0) * +l.aluguel * dias_restantes / dias_prazo);
     return { data, competencia: comp, fim_prazo: fim, indeterminado, dias_usados, dias_mes: dm, proporcional, dias_restantes, dias_prazo,
-      multa_alugueis: +l.multa_rescisao || 0, multa, aluguel: +l.aluguel };
+      multa_alugueis: +l.multa_rescisao || 0, multa, aluguel: +l.aluguel, marco_sem_multa: marco };
   }
 
   async function painel() {
@@ -491,6 +518,26 @@ export function criaLocacao({ q, json, log, arquivos }) {
         return json({ locacao: l, imovel: im, administracao: ad, proprietario: prop || null, locatarios: ordem.map(x => locs.find(y => y.id === x)).filter(Boolean), fiadores: fiad, texto: tx || null });
       }
       if (a === 'primeiro-vencimento' && m === 'GET') return json({ data: primeiroVenc(url.searchParams.get('ini'), +url.searchParams.get('dia')) });
+      if (a === 'poupanca' && m === 'GET') {
+        const v = nb(url.searchParams.get('valor')), de = url.searchParams.get('de'), ate = url.searchParams.get('ate');
+        if (!v || !de || !ate) return json({ erro: 'Informe valor, data do depósito e data final.' }, 400);
+        try { return json(await rendimentoPoupanca(v, de, ate)); } catch (e) { return json({ erro: e.message }, 502); }
+      }
+      if (a === 'locacao' && acao === 'docs' && m === 'GET') return json(await q(`select id, tipo, titulo, por, em from locacao.documentos_gerados where locacao_id=$1 order by em desc`, [id]));
+      if (a === 'doc-gerado') {
+        if (m === 'POST' && !id) {
+          const [l] = await q(`select id from locacao.locacoes where id=$1`, [body.locacao_id]);
+          if (!l) return json({ erro: 'Locação não encontrada.' }, 400);
+          if (!String(body.html || '').trim() || !body.tipo) return json({ erro: 'Documento vazio.' }, 400);
+          const [r] = await q(`insert into locacao.documentos_gerados(locacao_id, tipo, titulo, dados, html, por) values ($1,$2,$3,$4,$5,$6) returning id, em`,
+            [body.locacao_id, body.tipo, body.titulo || body.tipo, JSON.stringify(body.dados || {}), body.html, real]);
+          await log(real, 'loc_documento_gerado', { id: r.id, locacao: body.locacao_id, tipo: body.tipo });
+          return json(r);
+        }
+        if (id && m === 'GET') { const [r] = await q(`select * from locacao.documentos_gerados where id=$1`, [id]); return r ? json(r) : json({ erro: 'Documento não encontrado' }, 404); }
+        if (id && m === 'PUT') { const [r] = await q(`update locacao.documentos_gerados set html=$2, por=$3, em=now() where id=$1 returning id, em`, [id, body.html, real]); return r ? json(r) : json({ erro: 'Documento não encontrado' }, 404); }
+        if (id && m === 'DELETE') { await q(`delete from locacao.documentos_gerados where id=$1`, [id]); await log(real, 'loc_documento_excluido', { id: +id }); return json({ ok: true }); }
+      }
       if (a === 'contrato-texto' && (id === 'locacao' || id === 'administracao') && acao) {
         if (m === 'POST') {
           if (!String(body.html || '').trim()) return json({ erro: 'Texto vazio.' }, 400);

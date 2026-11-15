@@ -339,7 +339,7 @@ async function enviaLocacao(id,b){const url=BASE+'/api/loc/locacao'+(id?'/'+id:'
 let LOC=null;
 async function telaLocacao(id){LOC=await api('loc/locacao/'+id);const l=LOC.locacao;
   app.innerHTML=voltar('locacoes','← Contratos de locação')+`<div class="card"><div class="bt"><h3 style="margin:0;flex:1">${esc(l.apelido)} — ${esc(l.locatario)}</h3>
-   <button onclick="location.hash='imovel/${l.imovel_id}'">Conta do proprietário</button><button onclick="modalLocacao(${l.id})">Editar contrato</button><button onclick="abreContrato('locacao',${l.id})">Contrato (gerar / editar)</button>${l.status==='ativa'?`<button onclick="modalGerar(${l.id})">Gerar cobrança</button><button class="per" onclick="modalEncerrar(${l.id})">Encerrar locação</button>`:''}</div>
+   <button onclick="location.hash='imovel/${l.imovel_id}'">Conta do proprietário</button><button onclick="modalLocacao(${l.id})">Editar contrato</button><button onclick="abreContrato('locacao',${l.id})">Contrato (gerar / editar)</button><button onclick="modalDocsLoc(${l.id})">Documentos (gerar)</button>${l.status==='ativa'?`<button onclick="modalGerar(${l.id})">Gerar cobrança</button><button class="per" onclick="modalEncerrar(${l.id})">Encerrar locação</button>`:''}</div>
    <div class="tot" style="margin-top:10px"><div><span class="mut">Aluguel</span><b>${brl(l.aluguel)}</b></div><div><span class="mut">Vencimento</span><b>dia ${l.dia_vencimento}</b></div>
    <div><span class="mut">Início · prazo</span><b>${dbr(l.inicio)} · ${l.prazo_meses||'—'} meses</b></div><div><span class="mut">Fim do prazo</span><b>${dbr(LOC.fim_prazo)}${l.status==='ativa'&&LOC.fim_prazo<=hoje()?' · <span class="tag am">prazo indeterminado</span>':''}</b></div><div><span class="mut">Garantia</span><b>${esc({caucao:'Caução',fiador:'Fiador',seguro_fianca:'Seguro-fiança',titulo:'Título',sem_garantia:'Sem garantia'}[l.garantia]||l.garantia||'—')}${+l.caucao_valor?' '+brl(l.caucao_valor):''}</b></div>
    <div><span class="mut">Próximo reajuste (${esc(l.indice)})</span><b>${l.status==='ativa'&&l.indice!=='sem'?dbr(LOC.proximo_reajuste):'—'}</b></div><div><span class="mut">Situação</span><b>${l.status==='ativa'?'Ativa':'Encerrada em '+dbr(l.encerrada_em)}</b></div></div>
@@ -524,6 +524,74 @@ async function enviaAssinado(){const f=$('#ct_f').files[0];if(!f)return aviso('E
   if(CT.ent==='locacao')await sobeArquivo(f,'locacao',CT.id,'Contrato de locação assinado');
   else for(const im of CT.d.imoveis||[])await sobeArquivo(f,'imovel',im.id,'Contrato de administração');
   fecha2();aviso('Arquivo guardado em Documentos.')}
+
+/* ---------- documentos da locação: retificação de vistoria, chaves, notificação, confissão de dívida, acerto final com caução, recibo ---------- */
+const TIPOS_DOC={retificacao:'Retificação de vistoria',chaves:'Entrega / devolução de chaves',notificacao:'Notificação por falta de pagamento',confissao:'Confissão de dívida',acerto:'Acerto final (com devolução da caução)',recibo:'Recibo'};
+let DL=null;
+async function modalDocsLoc(id){const [d,lc,L]=await Promise.all([api('loc/contrato-dados/locacao/'+id),api('loc/locacao/'+id),api('loc/locacao/'+id+'/docs')]);DL={id,d,lc};
+  modal(`<div class="bt"><h3 style="flex:1;margin:0">Documentos da locação</h3><button onclick="fecha()">Fechar</button></div><div class="mut" style="margin:6px 0 10px">Tudo sai do cadastro, com prévia para editar antes do Word ou PDF.</div>
+   <div class="cgrid">${Object.entries(TIPOS_DOC).map(([k,t])=>`<div class="cb azul" onclick="formDoc('${k}')"><b>${t}</b></div>`).join('')}</div>
+   <h4 style="margin:16px 0 6px">Já gerados</h4><div class="cgrid">${L.map(x=>`<div class="cb" onclick="abreDocGerado(${x.id})"><b>${esc(x.titulo)}</b><span class="mut">${new Date(x.em).toLocaleString('pt-BR')}</span></div>`).join('')||'<div class="mut">Nenhum ainda.</div>'}</div>`)}
+const hojeISO=()=>hoje();
+function formDoc(k){const d=DL.d,l=d.locacao,M=DL.lc.mensalidades||[],t=TIPOS_DOC[k];let h='';
+  const abertas=M.filter(x=>x.situacao==='aberta'&&String(x.vencimento).slice(0,10)<hoje());
+  if(k==='retificacao')h=`<div class="f2"><div><label>Data do laudo de vistoria</label><input id="dc_dv" type="date" value="${String(l.data_chaves||l.inicio).slice(0,10)}"></div><div><label>Empresa / vistoriador</label><input id="dc_vi"></div><div><label>Data deste termo</label><input id="dc_d" type="date" value="${hojeISO()}"></div><div><label>Nº da retificação</label><input id="dc_n" type="number" value="1"></div></div>
+    <label style="margin-top:8px">Itens (um por linha, "Cômodo: o que muda")</label><textarea id="dc_it" style="min-height:140px" placeholder="Sala: pequena mancha abaixo do espelho&#10;Cozinha: jogo de pratos de porcelana 12 peças"></textarea>`;
+  if(k==='chaves')h=`<div class="f2"><div><label>O que é</label>${sel('dc_s',[['recebe','Entrega das chaves ao inquilino (entrada)'],['devolve','Devolução das chaves (saída)']],l.status==='ativa'?'recebe':'devolve')}</div><div><label>Data</label><input id="dc_d" type="date" value="${String(l.status==='ativa'?(l.data_chaves||l.inicio):(l.encerrada_em||hoje())).slice(0,10)}"></div><div style="grid-column:1/-1"><label>Chaves e controles entregues</label><input id="dc_it" placeholder="ex.: 03 chaves da porta, 01 controle da garagem, 01 tag"></div></div>`;
+  if(k==='notificacao')h=`<div class="info">${abertas.length?`${abertas.length} aluguel(is) em atraso entram com multa e juros do contrato.`:'Não há aluguel vencido em aberto nesta locação.'}</div><div class="f2"><div><label>Data</label><input id="dc_d" type="date" value="${hojeISO()}"></div><div><label>Prazo para regularizar</label><input id="dc_pz" value="48 (QUARENTA E OITO) HORAS"></div></div>
+    <label style="margin-top:8px">Situação da garantia (opcional)</label><input id="dc_g" placeholder="ex.: a caução foi usada para pagar o aluguel de março; o contrato está sem garantia">
+    <label style="margin-top:8px">Proposta de acordo (opcional)</label><textarea id="dc_pr" placeholder="ex.: proponho 50% de entrada e o restante em 3 vezes junto com os próximos aluguéis"></textarea>`;
+  if(k==='confissao'){const tot=abertas.reduce((s,x)=>s+ +(x.encargos?.total||x.total),0);
+    h=`<div class="f2"><div><label>Valor total confessado (R$)</label><input id="dc_v" type="number" step="0.01" value="${tot?tot.toFixed(2):''}"></div><div><label>Origem</label><input id="dc_o" value="${abertas.length?'de aluguéis em atraso':'do acerto final'}"></div>
+     <div><label>Entrada (R$, se tiver)</label><input id="dc_e" type="number" step="0.01"></div><div><label>Data da entrada</label><input id="dc_ed" type="date" value="${hojeISO()}"></div>
+     <div><label>Nº de parcelas</label><input id="dc_n" type="number" value="3"></div><div><label>1º vencimento</label><input id="dc_pv" type="date" value="${somaMes(hoje().slice(0,7),1)}-${String(l.dia_vencimento).padStart(2,'0')}"></div><div><label>Data do termo</label><input id="dc_d" type="date" value="${hojeISO()}"></div></div>`}
+  if(k==='acerto'){const enc=l.status!=='ativa',data=String(l.encerrada_em||hoje()).slice(0,10);
+    const IT=abertas.concat(enc?M.filter(x=>x.situacao==='aberta'&&String(x.vencimento).slice(0,10)>=hoje()):[]).map(x=>({descricao:'Aluguel em aberto (vencimento '+dbr(x.vencimento)+')',referencia:x.encargos?.dias?x.encargos.dias+' dias de atraso, com encargos':'',valor:(+(x.encargos?.total||x.total)).toFixed(2)}));
+    for(const n of ['Água','Energia','Gás','Condomínio','IPTU','Pintura','Limpeza','Reparos'])IT.push({descricao:n,referencia:'',valor:''});
+    window._IT=IT;
+    h=`<div class="f2"><div><label>Data da entrega das chaves</label><input id="dc_d" type="date" value="${data}" onchange="saidaAcerto()"></div><div><label>Caução (R$)</label><input id="dc_cv" type="number" step="0.01" value="${+l.caucao_valor||''}"></div>
+     <div><label>Data do depósito da caução</label><input id="dc_cd" type="date" value="${String(l.caucao_data||l.data_chaves||l.inicio).slice(0,10)}"></div><div><label>Rendimento da poupança (R$)</label><div class="bt"><input id="dc_cr" type="number" step="0.01" style="flex:1"><button type="button" onclick="buscaPoupanca()">Calcular</button></div><span id="dc_ci" class="mut"></span></div>
+     <div style="grid-column:1/-1"><label>Forma de devolução / pagamento do saldo</label><input id="dc_f" placeholder="ex.: Pix para a chave do locatário em 10 dias"></div></div>
+     ${enc?'':'<div class="bt" style="margin-top:8px"><button type="button" onclick="saidaAcerto()">Pôr aluguel proporcional e multa até a data da entrega</button></div>'}
+     <div style="margin-top:8px"><b>Débitos do inquilino</b> <span class="mut">(valor em branco não entra)</span><div id="dc_its"></div><button type="button" onclick="_IT.push({descricao:'',referencia:'',valor:''});desenhaIT()">+ linha</button></div>`}
+  if(k==='recibo'){const pg=M.filter(x=>x.situacao==='paga');window._PG=pg;
+    h=`<div class="f2"><div style="grid-column:1/-1"><label>Referente a</label>${sel('dc_m',[['','— outro valor (caução, acerto, etc.) —'],...pg.map(x=>[x.id,'Aluguel venc. '+dbr(x.vencimento)+' · pago '+brl(x.valor_pago||x.total)+' em '+dbr(x.pago_em)])],pg[0]?.id||'')}</div>
+     <div><label>Valor (R$)</label><input id="dc_v" type="number" step="0.01"></div><div><label>Data</label><input id="dc_d" type="date"></div><div><label>Forma</label><input id="dc_f" value="Pix"></div><div style="grid-column:1/-1"><label>Descrição</label><input id="dc_r"></div></div>`}
+  modal2(`<h3>${t}</h3>${h}<div class="bt" style="margin-top:12px"><button class="pri" onclick="geraDoc('${k}')">Ver prévia</button><button onclick="fecha2()">Cancelar</button></div>`);
+  if(k==='acerto'){desenhaIT();buscaPoupanca(true)}
+  if(k==='recibo'){const f=()=>{const x=window._PG.find(y=>y.id==val('dc_m'));if(x){$('#dc_v').value=(+(x.valor_pago||x.total)).toFixed(2);$('#dc_d').value=String(x.pago_em||hoje()).slice(0,10);$('#dc_r').value=refAluguel(x)}else{$('#dc_v').value='';$('#dc_d').value=hoje();$('#dc_r').value=''}};$('#dc_m').onchange=f;f()}}
+function refAluguel(x){const l=DL.d.locacao,v=String(x.vencimento).slice(0,10);if(l.primeiro_vencimento){const ant=v.slice(0,8)===String(l.primeiro_vencimento).slice(0,8)?String(l.data_chaves||l.inicio).slice(0,10):somaMes(v.slice(0,7),-1)+'-'+String(l.dia_vencimento).padStart(2,'0');const fim=new Date(Date.parse(v)-864e5).toISOString().slice(0,10);return `aluguel do período de ${dbr(ant)} a ${dbr(fim)} (vencimento ${dbr(v)})`}return `aluguel de ${nomeMes(x.competencia).toLowerCase()} (vencimento ${dbr(v)})`}
+function desenhaIT(){$('#dc_its').innerHTML=_IT.map((x,i)=>`<div class="f2" style="grid-template-columns:2fr 2fr 1fr auto;margin-top:4px"><input value="${esc(x.descricao)}" placeholder="Item" oninput="_IT[${i}].descricao=this.value"><input value="${esc(x.referencia)}" placeholder="Referência (mês, dias…)" oninput="_IT[${i}].referencia=this.value"><input type="number" step="0.01" value="${esc(x.valor)}" placeholder="R$" oninput="_IT[${i}].valor=this.value"><button type="button" class="per" onclick="_IT.splice(${i},1);desenhaIT()">×</button></div>`).join('')}
+async function saidaAcerto(){const l=DL.d.locacao;if(l.status!=='ativa')return;const s=await api('loc/locacao/'+DL.id+'/saida?data='+val('dc_d'));
+  _IT=_IT.filter(x=>!x._auto);if(s.proporcional)_IT.unshift({_auto:1,descricao:'Aluguel proporcional até a entrega',referencia:s.dias_usados+' dias',valor:s.proporcional.toFixed(2)});
+  if(s.multa)_IT.unshift({_auto:1,descricao:'Multa por rescisão antes do prazo',referencia:`${s.multa_alugueis} aluguéis proporcionais (${s.dias_restantes} de ${s.dias_prazo} dias)`,valor:s.multa.toFixed(2)});desenhaIT()}
+async function buscaPoupanca(quieto){const v=val('dc_cv'),de=val('dc_cd'),ate=val('dc_d');if(!+v||!de||!ate)return;$('#dc_ci').textContent='Buscando no Banco Central…';
+  try{const r=await fetch(BASE+'/api/loc/poupanca?valor='+v+'&de='+de+'&ate='+ate,{headers:{authorization:'Bearer '+TOKEN}}).then(r=>r.json());if(r.erro)throw new Error(r.erro);
+    $('#dc_cr').value=r.rendimento.toFixed(2);window._PP=r;$('#dc_ci').textContent=`${r.meses} mês(es) de rendimento · ${String(r.percentual).replace('.',',')}%`}catch(e){window._PP=null;$('#dc_ci').textContent='Não consegui o rendimento automático ('+e.message+'). Digite o valor do extrato da poupança.';if(!quieto)aviso(e.message)}}
+function geraDoc(k){const d=DL.d,C=Contratos;let h,o;
+  if(k==='retificacao'){o={data_vistoria:val('dc_dv'),vistoriador:val('dc_vi'),data:val('dc_d'),numero:val('dc_n'),itens:$('#dc_it').value};h=C.docRetificacao(d,o)}
+  if(k==='chaves'){o={sentido:val('dc_s'),data:val('dc_d'),itens:val('dc_it')};h=C.docEntregaChaves(d,o)}
+  if(k==='notificacao'){const ab=(DL.lc.mensalidades||[]).filter(x=>x.situacao==='aberta'&&String(x.vencimento).slice(0,10)<hoje());if(!ab.length)return aviso('Não há aluguel vencido em aberto.');
+    o={data:val('dc_d'),prazo:val('dc_pz'),garantia:val('dc_g'),proposta:$('#dc_pr').value.trim(),abertas:ab.map(x=>({vencimento:x.vencimento,dias:x.encargos?.dias||0,total:x.encargos?.total||x.total}))};h=C.docNotificacao(d,o)}
+  if(k==='confissao'){const v=+val('dc_v'),e=+val('dc_e')||0,n=Math.max(1,+val('dc_n')||1);if(!v)return aviso('Informe o valor.');const par=Math.floor((v-e)/n*100)/100,P=[];
+    for(let i=0;i<n;i++){const[y,m,dd]=val('dc_pv').split('-').map(Number);P.push({vencimento:new Date(Date.UTC(y,m-1+i,dd)).toISOString().slice(0,10),valor:i===n-1?Math.round((v-e-par*(n-1))*100)/100:par})}
+    o={valor:v,origem:val('dc_o'),entrada:e,entrada_data:val('dc_ed'),parcelas:P,data:val('dc_d')};h=C.docConfissao(d,o)}
+  if(k==='acerto'){o={data:val('dc_d'),forma:val('dc_f'),caucao:{valor:+val('dc_cv')||0,de:val('dc_cd'),rendimento:+val('dc_cr')||0,meses:window._PP?.meses,percentual:window._PP?.percentual},itens:_IT.filter(x=>+x.valor).map(({descricao,referencia,valor})=>({descricao,referencia,valor:+valor}))};h=C.docAcertoFinal(d,o)}
+  if(k==='recibo'){o={valor:+val('dc_v'),data:val('dc_d'),forma:val('dc_f'),referente:val('dc_r')};if(!o.valor)return aviso('Informe o valor.');h=C.docRecibo(d,o)}
+  fecha2();abreDocEditor({tipo:k,titulo:(k==='chaves'?(o.sentido==='devolve'?'Devolução de chaves':'Entrega de chaves'):TIPOS_DOC[k])+' — '+(d.imovel?.apelido||'')+' — '+dbr(o.data||hoje()),dados:o,html:h})}
+async function abreDocGerado(id){const r=await api('loc/doc-gerado/'+id);abreDocEditor({id:r.id,tipo:r.tipo,titulo:r.titulo,dados:r.dados,html:r.html})}
+let DOC=null;
+function abreDocEditor(x){DOC=x;modal(`<div class="bt" style="align-items:center;position:sticky;top:0;background:var(--card);z-index:2;padding-bottom:8px;border-bottom:1px solid var(--ln)"><h3 style="flex:1;margin:0">${esc(x.titulo)}</h3>
+    <button onmousedown="event.preventDefault();document.execCommand('bold')"><b>N</b></button><button onmousedown="event.preventDefault();document.execCommand('undo')">↶ Desfazer</button><button onclick="modalDocsLoc(${DL.id})">Voltar</button></div>
+   <div class="mut" style="margin:6px 0">${x.id?'Documento salvo.':'Prévia — ainda não salvo.'} Clique no texto e edite como no Word.</div>
+   <div id="ct_t" contenteditable="true" spellcheck="true" style="background:#fff;color:#111;font-family:Arial;font-size:13px;line-height:1.45;padding:40px 48px;border:1px solid var(--ln);min-height:50vh;text-align:justify">${x.html}</div>
+   <div class="bt" style="margin-top:10px;position:sticky;bottom:0;background:var(--card);padding-top:8px"><button class="pri" onclick="salvaDocGerado()">Salvar</button><button onclick="CT={titulo:DOC.titulo};wordContrato()">Baixar Word</button><button onclick="CT={titulo:DOC.titulo};pdfContrato()">Imprimir / PDF</button>
+    ${x.id?`<button onclick="CT={ent:'locacao',id:${DL.id}};sobeAssinado()">Subir versão assinada</button><button class="per" onclick="apagaDocGerado(${x.id})">Excluir</button>`:''}</div>`);
+  const st=document.createElement('style');st.textContent='#ct_t h1{font-size:17px;text-align:center;margin:0 0 4px}#ct_t p{margin:0 0 8px}';$('#ct_t').prepend(st)}
+async function salvaDocGerado(){const h=$('#ct_t').innerHTML.replace(/<style>[\s\S]*?<\/style>/,'');
+  if(DOC.id)await api('loc/doc-gerado/'+DOC.id,{method:'PUT',body:{html:h}});else{const r=await api('loc/doc-gerado',{method:'POST',body:{locacao_id:DL.id,tipo:DOC.tipo,titulo:DOC.titulo,dados:DOC.dados,html:h}});DOC.id=r.id}
+  DOC.html=h;aviso('Documento salvo.');abreDocEditor(DOC)}
+async function apagaDocGerado(id){if(!confirm('Excluir este documento?'))return;await api('loc/doc-gerado/'+id,{method:'DELETE'});modalDocsLoc(DL.id)}
 </script>
 </body>
 </html>
