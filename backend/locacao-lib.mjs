@@ -134,8 +134,10 @@ export function criaLocacao({ q, json, log, arquivos }) {
   async function geraMensalidades(comp, locacaoId) {
     const ini = comp + '-01', [a, m] = comp.split('-').map(Number), fim = `${comp}-${ultimoDia(a, m)}`;
     const L = await q(`select * from locacao.locacoes where inicio<=$2 and (status='ativa' or encerrada_em>=$1) ${locacaoId ? 'and id=$3' : ''}`, locacaoId ? [ini, fim, locacaoId] : [ini, fim]);
-    let criadas = 0;
+    let criadas = 0; const travadas = [];
     for (const l of L) {
+      /* no máximo 12 cobranças por ano de contrato: do aniversário em diante só depois de aplicar o reajuste */
+      if (l.indice !== 'sem') { const aniv = proximoAniversario(l); if (comp >= compDe(aniv)) { travadas.push({ id: l.id, aniversario: aniv }); continue; } }
       const it = itensDoMes(l, comp);
       const total = R2(it.reduce((s, x) => s + x.valor, 0));
       const r = await q(`insert into locacao.mensalidades(locacao_id, competencia, vencimento, itens, total) values ($1,$2,$3,$4,$5) on conflict (locacao_id, competencia) do nothing returning id`,
@@ -145,7 +147,7 @@ export function criaLocacao({ q, json, log, arquivos }) {
         if (resp === 'inquilino' || resp === 'proprietario')
           await q(`insert into locacao.obrigacoes(locacao_id, imovel_id, competencia, item, responsavel) values ($1,$2,$3,$4,$5) on conflict (locacao_id, competencia, item) do nothing`, [l.id, l.imovel_id, comp, item, resp]);
     }
-    return { criadas, locacoes: L.length };
+    return { criadas, locacoes: L.length, travadas };
   }
 
   /* ---------- pagamento do inquilino → conta corrente do proprietário ---------- */
@@ -493,12 +495,15 @@ export function criaLocacao({ q, json, log, arquivos }) {
         const data = url.searchParams.get('data') || proximoAniversario(l);
         const ind = url.searchParams.get('indice') || l.indice;
         const calc = ind === 'fixo' ? { meses: [], percentual: +l.reajuste_fixo_pct || 0 } : await indiceAcumulado(ind, data);
-        return json({ data, indice: ind, ...calc, aluguel: +l.aluguel, novo: R2(+l.aluguel * (1 + calc.percentual / 100)) });
+        const negativo = calc.percentual < 0; if (negativo) calc.percentual = 0; /* correção negativa não existe: o aluguel fica igual */
+        return json({ data, indice: ind, ...calc, negativo, aluguel: +l.aluguel, novo: R2(+l.aluguel * (1 + calc.percentual / 100)) });
       }
       if (a === 'reajuste' && id && m === 'POST') {
         const [l] = await q(`select * from locacao.locacoes where id=$1`, [id]);
         const pct = nb(body.percentual); if (pct === null || !body.data) return json({ erro: 'Informe a data e o percentual' }, 400);
+        if (pct < 0) return json({ erro: 'Correção negativa não existe: o aluguel não pode diminuir pelo reajuste.' }, 400);
         const novo = body.novo ? R2(nb(body.novo)) : R2(+l.aluguel * (1 + pct / 100));
+        if (novo < +l.aluguel) return json({ erro: 'O reajuste não pode diminuir o aluguel. Desconto só por renegociação.' }, 400);
         await q(`insert into locacao.reajustes(locacao_id, data, indice, percentual, valor_antes, valor_depois, memoria, por) values ($1,$2,$3,$4,$5,$6,$7,$8)`,
           [id, body.data, body.indice || l.indice, pct, l.aluguel, novo, JSON.stringify(body.memoria || null), real]);
         const [r] = await q(`update locacao.locacoes set aluguel=$2, ultimo_reajuste=$3 where id=$1 returning *`, [id, novo, body.data]);

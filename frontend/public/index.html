@@ -311,7 +311,8 @@ async function obrig(id,acao){if(acao==='desfazer'&&!confirm('Desfazer? Se a Ine
   await api('loc/obrigacao/'+id+'/'+acao,{method:'POST',body:{}});fecha();await telaLocacao(o.locacao_id);abaLoc(4)}
 function modalGerar(id){modal(`<h3>Gerar cobrança do mês</h3><label>Mês</label><input id="g_c" type="month" value="${hoje().slice(0,7)}"><div class="mut" style="margin-top:6px">Gera o aluguel do mês e os itens de condomínio e IPTU para conferir ou pagar, conforme o contrato. Mês que já tem cobrança fica como está.</div>
   <div class="bt" style="margin-top:12px"><button class="pri" onclick="gera(${id})">Gerar</button><button onclick="fecha()">Cancelar</button></div>`)}
-async function gera(id){const r=await api('loc/mensalidades/gerar',{method:'POST',body:{competencia:val('g_c'),locacao_id:id||null}});fecha();aviso(r.criadas?`${r.criadas} cobrança(s) criada(s).`:'Nada novo para criar nesse mês.');route()}
+const msgTrava=r=>r.travadas?.length?` ${r.travadas.length} contrato(s) precisam do reajuste antes (aniversário ${r.travadas.map(x=>dbr(x.aniversario)).join(', ')}): no máximo 12 cobranças por ano de contrato.`:'';
+async function gera(id){const r=await api('loc/mensalidades/gerar',{method:'POST',body:{competencia:val('g_c'),locacao_id:id||null}});fecha();aviso((r.criadas?`${r.criadas} cobrança(s) criada(s).`:'Nada novo criado.')+msgTrava(r));route()}
 function modalMensalidade(id){const m=LOC.mensalidades.find(x=>x.id===id);const e=m.encargos||{};
   const itens=m.itens.map((x,i)=>`<div class="f2" style="margin-bottom:6px"><div>${sel('mi_t'+i,Object.entries(TIPOS).filter(([k])=>['aluguel','condominio','iptu','agua','energia','gas','outros','encargos'].includes(k)),x.tipo)}</div><div><input id="mi_d${i}" value="${esc(x.descricao)}"></div><div><input id="mi_v${i}" type="number" step="0.01" value="${x.valor}"></div></div>`).join('');
   modal(`<h3>${nomeMes(m.competencia)} — ${brl(m.total)}</h3>
@@ -340,9 +341,9 @@ function modalEncerrar(id){modal(`<h3>Encerrar locação</h3><div class="f2"><di
 async function encerra(id){const r=await api('loc/locacao/'+id+'/encerrar',{method:'POST',body:{data:val('e_d'),motivo:val('e_m')}});fecha();aviso(`Locação encerrada. ${r.canceladas} cobrança(s) futura(s) cancelada(s).`);telaLocacao(id)}
 async function modalReajuste(id,data){modal('<h3>Reajuste</h3>Buscando o índice no Banco Central…');let r;try{r=await api(`loc/reajuste/${id}${data?'?data='+data:''}`)}catch(e){return fecha()}
   modal(`<h3>Reajuste do aluguel</h3><div class="f2"><div><label>Data do reajuste (aniversário)</label><input id="rj_d" type="date" value="${r.data}" onchange="modalReajuste(${id},this.value)"></div><div><label>Índice</label><b>${esc(r.indice)}</b></div>
-   <div><label>Percentual acumulado (pode ajustar)</label><input id="rj_p" type="number" step="0.01" value="${r.percentual}" oninput="$('#rj_n').value=(${r.aluguel}*(1+this.value/100)).toFixed(2)"></div><div><label>Novo aluguel</label><input id="rj_n" type="number" step="0.01" value="${r.novo}"></div></div>
+   <div><label>Percentual acumulado (pode ajustar)</label><input id="rj_p" type="number" step="0.01" min="0" value="${r.percentual}" oninput="$('#rj_n').value=(${r.aluguel}*(1+this.value/100)).toFixed(2)"></div><div><label>Novo aluguel</label><input id="rj_n" type="number" step="0.01" value="${r.novo}"></div></div>
    <div class="mut" style="margin-top:6px">Aluguel atual ${brl(r.aluguel)}. ${r.meses.length?`Meses usados: ${r.meses.map(x=>x.mes.slice(5)+'/'+x.mes.slice(2,4)+' '+String(x.pct).replace('.',',')+'%').join(' · ')}`:''}</div>
-   ${r.percentual<0?'<div class="aviso">O índice acumulado ficou negativo. Muitos contratos não reduzem o aluguel; confira a cláusula antes de aplicar.</div>':''}
+   ${r.negativo?'<div class="info">O índice dos 12 meses ficou negativo. Correção negativa não existe: o aluguel fica igual (0%).</div>':''}
    <div class="bt" style="margin-top:12px"><button class="pri" onclick="aplicaReajuste(${id},${JSON.stringify(r.meses).replace(/"/g,'&quot;')})">Aplicar reajuste</button><button onclick="fecha()">Cancelar</button></div>`)}
 async function aplicaReajuste(id,meses){const r=await api('loc/reajuste/'+id,{method:'POST',body:{data:val('rj_d'),percentual:val('rj_p'),novo:val('rj_n'),memoria:meses}});fecha();aviso(`Aluguel reajustado para ${brl(r.novo)}. ${r.cobrancas_atualizadas} cobrança(s) em aberto atualizada(s).`);route()}
 
@@ -358,7 +359,7 @@ async function telaCalendario(c){const d=await api('loc/calendario/'+(c||''));co
      <span>${!cb?'<span class="tag">Cobrança não gerada</span>':cb.situacao==='paga'?`<span class="tag ok">Recebido ${dbr(cb.pago_em)}</span>`:cb.situacao==='cancelada'?'<span class="tag">Cancelada</span>':atr?'<span class="tag al">Em atraso</span>':`<span class="tag am">Vence ${dbr(cb.vencimento)}</span>`}</span>
      <span>${+x.repassado?`<span class="tag ok">Repassado ${brl(x.repassado)}</span>`:cb?.situacao==='paga'?`<span class="tag am">Falta repassar · saldo ${brl(x.saldo)}</span>`:''}</span>
      <span>${(x.obrigacoes||[]).map(o=>`<span class="tag ${o.situacao==='pago'?'ok':o.situacao==='dispensado'?'':'am'}">${o.item==='condominio'?'Cond.':'IPTU'} ${o.situacao==='pago'?'ok':o.situacao==='dispensado'?'—':o.responsavel==='inquilino'?'conferir':'pagar'}</span>`).join(' ')}</span></div>`}).join('')}</div>`).join('')||'<div class="mut">Nenhum contrato ativo nesse mês.</div>'}`}
-async function geraMes(c){if(!confirm('Gerar as cobranças de '+nomeMes(c)+' para todos os contratos ativos?'))return;const r=await api('loc/mensalidades/gerar',{method:'POST',body:{competencia:c}});aviso(`${r.criadas} cobrança(s) criada(s) de ${r.locacoes} contrato(s).`);telaCalendario(c)}
+async function geraMes(c){if(!confirm('Gerar as cobranças de '+nomeMes(c)+' para todos os contratos ativos?'))return;const r=await api('loc/mensalidades/gerar',{method:'POST',body:{competencia:c}});aviso(`${r.criadas} cobrança(s) criada(s) de ${r.locacoes} contrato(s).`+msgTrava(r));telaCalendario(c)}
 
 /* ---------- inadimplência ---------- */
 let INAD=[];
