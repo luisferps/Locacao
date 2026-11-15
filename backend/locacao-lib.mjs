@@ -13,8 +13,15 @@ const somaMes = (comp, n) => { const [a, m] = comp.split('-').map(Number); const
 const vencDe = (comp, dia) => { const [a, m] = comp.split('-').map(Number); return new Date(Date.UTC(a, m - 1, +dia)).toISOString().slice(0, 10); };
 const addMeses = (data, n) => { const [a, m, d] = String(data).slice(0, 10).split('-').map(Number); const c = somaMes(`${a}-${String(m).padStart(2, '0')}`, n); return vencDe(c, d); };
 const diasEntre = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
+/* CPF/CNPJ com dígito verificador */
+function docValido(d) {
+  d = String(d || '').replace(/\D/g, '');
+  if (d.length === 11) { if (/^(\d)\1+$/.test(d)) return false; const dv = n => { let s = 0; for (let i = 0; i < n; i++) s += +d[i] * (n + 1 - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; }; return dv(9) === +d[9] && dv(10) === +d[10]; }
+  if (d.length === 14) { if (/^(\d)\1+$/.test(d)) return false; const dv = n => { const w = n === 12 ? [5,4,3,2,9,8,7,6,5,4,3,2] : [6,5,4,3,2,9,8,7,6,5,4,3,2]; let s = 0; for (let i = 0; i < n; i++) s += +d[i] * w[i]; const r = s % 11; return r < 2 ? 0 : 11 - r; }; return dv(12) === +d[12] && dv(13) === +d[13]; }
+  return false;
+}
 const SERIES = { 'IGP-M': 189, 'IPCA': 433, 'INPC': 188 };
-const TIPOS = ['aluguel', 'encargos', 'adm', 'intermediacao', 'condominio', 'fundo_reserva', 'retencao', 'iptu', 'agua', 'energia', 'gas', 'manutencao', 'caucao', 'repasse', 'outros'];
+const TIPOS = ['aluguel', 'rescisao', 'encargos', 'adm', 'intermediacao', 'condominio', 'fundo_reserva', 'retencao', 'iptu', 'agua', 'energia', 'gas', 'manutencao', 'caucao', 'repasse', 'outros'];
 
 export function criaLocacao({ q, json, log, arquivos }) {
   let ok = false;
@@ -52,6 +59,8 @@ export function criaLocacao({ q, json, log, arquivos }) {
     await q(`create table if not exists locacao.documentos(id serial primary key, entidade text not null, entidade_id int not null, tipo text, nome text not null,
       chave text not null, bytes int, por text, em timestamptz default now())`);
     /* condomínio e IPTU: de quem é a responsabilidade (do inquilino: ele paga e a Inerente só confere; do proprietário: o aluguel é fixo e a Inerente paga, descontando do proprietário) */
+    await q(`create unique index if not exists imoveis_apelido on locacao.imoveis(lower(trim(apelido)))`);
+    await q(`alter table locacao.locacoes add column if not exists multa_rescisao numeric not null default 3`); /* em número de aluguéis, cobrada proporcional ao prazo que falta */
     await q(`alter table locacao.locacoes add column if not exists condominio_resp text not null default 'inquilino'`);
     await q(`alter table locacao.locacoes add column if not exists iptu_resp text not null default 'inquilino'`);
     await q(`create table if not exists locacao.obrigacoes(id serial primary key, locacao_id int not null references locacao.locacoes(id), imovel_id int not null references locacao.imoveis(id),
@@ -104,9 +113,9 @@ export function criaLocacao({ q, json, log, arquivos }) {
   const C_IMOVEL = ['apelido', 'tipo', 'endereco', 'unidade', 'condominio', 'administradora', 'matricula', 'inscricao_iptu', 'area', 'quartos', 'vagas', 'energia', 'agua', 'gas', 'extras', 'proprietario_id', 'pasta', 'obs', 'ativo'];
   const C_ADM = ['imovel_id', 'proprietario_id', 'inicio', 'fim', 'taxa_tipo', 'taxa_valor', 'intermediacao_tipo', 'intermediacao_valor', 'taxa_sobre_encargos', 'repasse_forma', 'repasse_chave', 'status', 'obs'];
   const C_LOC = ['imovel_id', 'administracao_id', 'locatario_id', 'fiadores', 'garantia', 'garantia_info', 'caucao_valor', 'caucao_data', 'inicio', 'prazo_meses', 'dia_vencimento', 'aluguel', 'indice',
-    'reajuste_fixo_pct', 'ultimo_reajuste', 'condominio_resp', 'iptu_resp', 'outros_valor', 'outros_descricao', 'multa_pct', 'juros_mes_pct',
+    'reajuste_fixo_pct', 'ultimo_reajuste', 'condominio_resp', 'iptu_resp', 'multa_rescisao', 'outros_valor', 'outros_descricao', 'multa_pct', 'juros_mes_pct',
     'cobranca_pct', 'cobranca_dias', 'honorarios_pct', 'honorarios_dias', 'obs'];
-  const NUMS = ['area', 'taxa_valor', 'intermediacao_valor', 'caucao_valor', 'aluguel', 'reajuste_fixo_pct', 'condominio_valor', 'iptu_valor', 'outros_valor', 'multa_pct', 'juros_mes_pct', 'cobranca_pct', 'honorarios_pct'];
+  const NUMS = ['multa_rescisao', 'area', 'taxa_valor', 'intermediacao_valor', 'caucao_valor', 'aluguel', 'reajuste_fixo_pct', 'condominio_valor', 'iptu_valor', 'outros_valor', 'multa_pct', 'juros_mes_pct', 'cobranca_pct', 'honorarios_pct'];
   const normaliza = b => { const o = { ...b }; for (const k of NUMS) if (k in o) o[k] = nb(o[k]); if ('documento' in o) o.documento = String(o.documento || '').replace(/\D/g, '') || null; return o; };
 
   /* ---------- encargos de uma cobrança em atraso, pelas regras do contrato ---------- */
@@ -207,6 +216,18 @@ export function criaLocacao({ q, json, log, arquivos }) {
     return d;
   }
 
+  function calculaSaida(l, data) {
+    const ini = String(l.inicio).slice(0, 10), fim = addMeses(ini, +l.prazo_meses || 30);
+    const indeterminado = data >= fim;
+    const comp = compDe(data), [a, mm] = comp.split('-').map(Number), dm = ultimoDia(a, mm);
+    const dias_usados = +data.slice(8);
+    const proporcional = R2(+l.aluguel * dias_usados / dm);
+    const dias_prazo = Math.max(1, diasEntre(ini, fim)), dias_restantes = indeterminado ? 0 : Math.max(0, diasEntre(data, fim));
+    const multa = indeterminado ? 0 : R2((+l.multa_rescisao || 0) * +l.aluguel * dias_restantes / dias_prazo);
+    return { data, competencia: comp, fim_prazo: fim, indeterminado, dias_usados, dias_mes: dm, proporcional, dias_restantes, dias_prazo,
+      multa_alugueis: +l.multa_rescisao || 0, multa, aluguel: +l.aluguel };
+  }
+
   async function painel() {
     const ativas = await q(`select l.*, i.apelido from locacao.locacoes l join locacao.imoveis i on i.id=l.imovel_id where l.status='ativa'`);
     const adms = await q(`select * from locacao.administracoes where status='ativo'`);
@@ -262,6 +283,7 @@ export function criaLocacao({ q, json, log, arquivos }) {
         from locacao.pessoas p order by p.nome`));
       if (a === 'pessoa' && (m === 'POST' || m === 'PUT')) {
         if (m === 'POST' && !String(b.nome || '').trim()) return json({ erro: 'Informe o nome' }, 400);
+        if (b.documento && !docValido(b.documento)) return json({ erro: 'CPF/CNPJ inválido: confira os números.' }, 400);
         if (b.documento) { const [d] = await q(`select id, nome from locacao.pessoas where documento=$1 and id<>$2`, [b.documento, +id || 0]); if (d) return json({ erro: `Esse CPF/CNPJ já está cadastrado (${d.nome}).` }, 409); }
         if (m === 'PUT' && 'telefone' in b) {
           const [old] = await q(`select telefone, telefones_antigos from locacao.pessoas where id=$1`, [id]);
@@ -296,6 +318,8 @@ export function criaLocacao({ q, json, log, arquivos }) {
       }
       if (a === 'imovel' && (m === 'POST' || m === 'PUT')) {
         if (m === 'POST' && !String(b.apelido || '').trim()) return json({ erro: 'Informe o nome do imóvel (ex.: Home Serrinha 2305)' }, 400);
+        if (b.apelido) { const [d] = await q(`select id from locacao.imoveis where lower(trim(apelido))=lower(trim($1)) and id<>$2`, [b.apelido, +id || 0]); if (d) return json({ erro: 'Já existe um imóvel com esse nome.' }, 409); }
+        if (b.proprietario_id) { const [pp] = await q(`select id from locacao.pessoas where id=$1`, [b.proprietario_id]); if (!pp) return json({ erro: 'Proprietário não encontrado no cadastro.' }, 400); }
         const r = await upsert('imoveis', C_IMOVEL, b, m === 'PUT' ? id : null);
         await log(real, m === 'POST' ? 'loc_imovel_criado' : 'loc_imovel_alterado', { id: r.id, apelido: r.apelido });
         return json(r);
@@ -310,6 +334,15 @@ export function criaLocacao({ q, json, log, arquivos }) {
       /* contrato de administração (com o proprietário) */
       if (a === 'administracao' && (m === 'POST' || m === 'PUT')) {
         if (m === 'POST' && !b.imovel_id) return json({ erro: 'Falta o imóvel' }, 400);
+        if (m === 'POST') {
+          const [im] = await q(`select proprietario_id from locacao.imoveis where id=$1`, [b.imovel_id]);
+          if (!im) return json({ erro: 'Imóvel não encontrado.' }, 400);
+          if (!im.proprietario_id) return json({ erro: 'Cadastre o proprietário na ficha do imóvel antes do contrato de administração.' }, 400);
+          b.proprietario_id = im.proprietario_id;
+          const [at] = await q(`select id from locacao.administracoes where imovel_id=$1 and status='ativo'`, [b.imovel_id]);
+          if (at && (b.status || 'ativo') === 'ativo') return json({ erro: 'Esse imóvel já tem contrato de administração ativo. Encerre o anterior antes.' }, 409);
+        }
+        if (b.taxa_valor !== undefined && b.taxa_valor !== null && +b.taxa_valor < 0) return json({ erro: 'Taxa inválida.' }, 400);
         const r = await upsert('administracoes', C_ADM, b, m === 'PUT' ? id : null);
         await log(real, 'loc_administracao_salva', { id: r.id, imovel: r.imovel_id });
         return json(r);
@@ -320,7 +353,7 @@ export function criaLocacao({ q, json, log, arquivos }) {
         l.garantia, i.apelido, i.id imovel_id, p.nome locatario, p.telefone,
         (select count(*) from locacao.mensalidades x where x.locacao_id=l.id and x.situacao='aberta' and x.vencimento<current_date)::int atrasadas
         from locacao.locacoes l join locacao.imoveis i on i.id=l.imovel_id join locacao.pessoas p on p.id=l.locatario_id order by l.status, i.apelido`));
-      if (a === 'locacao' && m === 'GET' && id) {
+      if (a === 'locacao' && m === 'GET' && id && !acao) {
         const [l] = await q(`select l.*,
           i.apelido, p.nome locatario, p.telefone, p.email
           from locacao.locacoes l join locacao.imoveis i on i.id=l.imovel_id join locacao.pessoas p on p.id=l.locatario_id where l.id=$1`, [id]);
@@ -330,15 +363,26 @@ export function criaLocacao({ q, json, log, arquivos }) {
         const rj = await q(`select * from locacao.reajustes where locacao_id=$1 order by data desc`, [id]);
         const docs = await q(`select id, tipo, nome, bytes, em from locacao.documentos where entidade='locacao' and entidade_id=$1 order by em desc`, [id]);
         const ob = await q(`select * from locacao.obrigacoes where locacao_id=$1 order by competencia desc, item`, [id]);
-        return json({ locacao: l, mensalidades: ms, obrigacoes: ob, reajustes: rj, documentos: docs, proximo_reajuste: l.status === 'ativa' ? proximoAniversario(l) : null });
+        return json({ locacao: l, mensalidades: ms, obrigacoes: ob, reajustes: rj, documentos: docs, proximo_reajuste: l.status === 'ativa' ? proximoAniversario(l) : null, fim_prazo: addMeses(String(l.inicio).slice(0, 10), +l.prazo_meses || 30) });
       }
       if (a === 'locacao' && (m === 'POST' || m === 'PUT') && !acao) {
         if (m === 'POST') {
           if (!b.imovel_id || !b.locatario_id || !b.inicio || !b.dia_vencimento || !b.aluguel) return json({ erro: 'Preencha imóvel, inquilino, início, dia de vencimento e aluguel.' }, 400);
+          const [im] = await q(`select proprietario_id from locacao.imoveis where id=$1`, [b.imovel_id]);
+          if (!im) return json({ erro: 'Imóvel não encontrado.' }, 400);
+          if (!im.proprietario_id) return json({ erro: 'O imóvel não tem proprietário cadastrado. Cadastre na ficha do imóvel.' }, 400);
+          const [ad] = await q(`select id from locacao.administracoes where imovel_id=$1 and status='ativo' order by id desc limit 1`, [b.imovel_id]);
+          if (!ad) return json({ erro: 'O imóvel não tem contrato de administração. Cadastre na aba "Contrato de administração" do imóvel antes da locação.' }, 400);
+          b.administracao_id = ad.id;
+          const [lt] = await q(`select id from locacao.pessoas where id=$1`, [b.locatario_id]);
+          if (!lt) return json({ erro: 'Inquilino não encontrado no cadastro.' }, 400);
+          if (+b.locatario_id === +im.proprietario_id) return json({ erro: 'O inquilino não pode ser o próprio proprietário.' }, 400);
           const [at] = await q(`select id from locacao.locacoes where imovel_id=$1 and status='ativa'`, [b.imovel_id]);
           if (at) return json({ erro: 'Esse imóvel já tem um contrato de locação ativo. Encerre o anterior primeiro.' }, 409);
-          if (!b.administracao_id) { const [ad] = await q(`select id from locacao.administracoes where imovel_id=$1 and status='ativo' order by id desc limit 1`, [b.imovel_id]); if (ad) b.administracao_id = ad.id; }
         }
+        if ('aluguel' in b && !(+b.aluguel > 0)) return json({ erro: 'Aluguel inválido.' }, 400);
+        if ('dia_vencimento' in b && !(+b.dia_vencimento >= 1 && +b.dia_vencimento <= 31)) return json({ erro: 'Dia de vencimento deve ser de 1 a 31.' }, 400);
+        if (m === 'PUT') delete b.imovel_id; /* contrato não troca de imóvel */
         const r = await upsert('locacoes', C_LOC, b, m === 'PUT' ? id : null);
         if (m === 'PUT') { /* cobranças em aberto acompanham o contrato (valor e dia) */
           const ab = await q(`select * from locacao.mensalidades where locacao_id=$1 and situacao='aberta'`, [id]);
@@ -348,12 +392,40 @@ export function criaLocacao({ q, json, log, arquivos }) {
         await log(real, m === 'POST' ? 'loc_locacao_criada' : 'loc_locacao_alterada', { id: r.id, imovel: r.imovel_id });
         return json(r);
       }
+      /* saída do inquilino: pode sair a qualquer momento. Antes do fim do prazo paga multa proporcional ao tempo que falta;
+         no fim do prazo, nada; depois do prazo (contrato por prazo indeterminado), sem multa, mas sem aviso de 30 dias paga um aluguel */
+      if (a === 'locacao' && acao === 'saida' && m === 'GET') {
+        const [l] = await q(`select * from locacao.locacoes where id=$1`, [id]);
+        if (!l) return json({ erro: 'Contrato não encontrado' }, 404);
+        return json(calculaSaida(l, url.searchParams.get('data') || hojeBR()));
+      }
       if (a === 'locacao' && acao === 'encerrar' && m === 'POST') {
         if (!b.data) return json({ erro: 'Informe a data de saída' }, 400);
+        const [l] = await q(`select * from locacao.locacoes where id=$1`, [id]);
+        if (!l || l.status !== 'ativa') return json({ erro: 'Contrato não está ativo.' }, 409);
+        const s = calculaSaida(l, b.data);
+        const itens = [];
+        const prop = nb(body.proporcional), multa = nb(body.multa), aviso = nb(body.aviso_previo);
+        if (prop) itens.push({ tipo: 'aluguel', descricao: `Aluguel proporcional até ${b.data.split('-').reverse().join('/')} (${s.dias_usados} dias)`, valor: R2(prop) });
+        if (multa) itens.push({ tipo: 'rescisao', descricao: 'Multa por saída antes do fim do contrato', valor: R2(multa) });
+        if (aviso) itens.push({ tipo: 'rescisao', descricao: 'Aviso prévio não cumprido (1 aluguel)', valor: R2(aviso) });
         await q(`update locacao.locacoes set status='encerrada', encerrada_em=$2, motivo_fim=$3 where id=$1`, [id, b.data, b.motivo || null]);
-        const c = await q(`update locacao.mensalidades set situacao='cancelada', obs=coalesce(obs||' · ','')||'cancelada no encerramento' where locacao_id=$1 and situacao='aberta' and vencimento>$2 returning id`, [id, b.data]);
-        await log(real, 'loc_locacao_encerrada', { id, data: b.data, canceladas: c.length });
-        return json({ ok: true, canceladas: c.length });
+        /* cobrança do mês da saída vira o acerto de saída (se ainda estiver em aberto); se já foi paga, o acerto vai para o mês seguinte */
+        let comp = s.competencia;
+        const [doMes] = await q(`select * from locacao.mensalidades where locacao_id=$1 and competencia=$2`, [id, comp]);
+        if (doMes && doMes.situacao === 'paga') { comp = somaMes(comp, 1); if (prop) itens.shift(); }
+        const c = await q(`update locacao.mensalidades set situacao='cancelada', obs=coalesce(obs||' · ','')||'cancelada na saída do inquilino' where locacao_id=$1 and situacao='aberta' and competencia>$2 returning id`, [id, comp]);
+        if (itens.length) {
+          const tot = R2(itens.reduce((x, y) => x + y.valor, 0));
+          await q(`insert into locacao.mensalidades(locacao_id, competencia, vencimento, itens, total, obs) values ($1,$2,$3,$4,$5,'acerto de saída')
+            on conflict (locacao_id, competencia) do update set itens=excluded.itens, total=excluded.total, vencimento=excluded.vencimento, situacao='aberta', obs='acerto de saída'`,
+            [id, comp, b.data, JSON.stringify(itens), tot]);
+        } else if (doMes && doMes.situacao === 'aberta' && comp === s.competencia) {
+          await q(`update locacao.mensalidades set situacao='cancelada', obs='cancelada na saída do inquilino' where id=$1`, [doMes.id]);
+        }
+        await q(`update locacao.obrigacoes set situacao='dispensado', obs='inquilino saiu' where locacao_id=$1 and situacao='pendente' and competencia>$2`, [id, s.competencia]);
+        await log(real, 'loc_locacao_encerrada', { id, data: b.data, motivo: b.motivo, canceladas: c.length, itens });
+        return json({ ok: true, canceladas: c.length, acerto: itens.length ? R2(itens.reduce((x, y) => x + y.valor, 0)) : 0 });
       }
 
       /* cobranças do inquilino */
@@ -423,6 +495,8 @@ export function criaLocacao({ q, json, log, arquivos }) {
       if (a === 'repasse' && m === 'POST') {
         const v = R2(nb(b.valor));
         if (!b.imovel_id || !/^\d{4}-\d{2}$/.test(b.competencia || '') || !v || !b.data) return json({ erro: 'Preencha imóvel, mês, data e valor do repasse.' }, 400);
+        const saldo = await saldoImovel(b.imovel_id);
+        if (v > saldo + 0.004) return json({ erro: `O repasse (${v.toFixed(2).replace('.', ',')}) é maior que o saldo do proprietário (${saldo.toFixed(2).replace('.', ',')}).` }, 400);
         await q(`insert into locacao.lancamentos(imovel_id, competencia, data, tipo, descricao, valor, origem, por, documento_id) values ($1,$2,$3,'repasse',$4,$5,'manual',$6,$7)`,
           [b.imovel_id, b.competencia, b.data, String(b.descricao || 'Repasse ao proprietário'), -v, real, b.documento_id || null]);
         await log(real, 'loc_repasse', { imovel: b.imovel_id, competencia: b.competencia, valor: v });
@@ -517,6 +591,10 @@ export function criaLocacao({ q, json, log, arquivos }) {
       if (a === 'documentos' && m === 'GET') return json(await q(`select id, entidade, entidade_id, tipo, nome, bytes, em from locacao.documentos where entidade=$1 and entidade_id=$2 order by em desc`, [url.searchParams.get('entidade'), url.searchParams.get('id')]));
       if (a === 'documento' && m === 'POST' && !id) {
         if (!body.base64 || !body.nome || !body.entidade || !body.entidade_id) return json({ erro: 'Arquivo incompleto' }, 400);
+        const tabEnt = { imovel: 'imoveis', locacao: 'locacoes', pessoa: 'pessoas', administracao: 'administracoes' }[body.entidade];
+        if (!tabEnt) return json({ erro: 'Tipo de documento inválido.' }, 400);
+        const [ent] = await q(`select id from locacao.${tabEnt} where id=$1`, [body.entidade_id]);
+        if (!ent) return json({ erro: 'O registro desse documento não existe.' }, 400);
         const buf = Buffer.from(String(body.base64).replace(/^data:[^,]*,/, ''), 'base64');
         const chave = `${body.entidade}/${body.entidade_id}/${Date.now()}-${String(body.nome).replace(/[^\w.\-]+/g, '_')}`;
         await arquivos.set(chave, buf);
