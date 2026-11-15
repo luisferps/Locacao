@@ -295,6 +295,7 @@ const C_LOC=[{k:'inicio',l:'Início do contrato',t:'date'},{k:'prazo_meses',l:'P
   {k:'finalidade',l:'Finalidade',t:'sel',o:[['residencial','Residencial'],['comercial','Comercial (não residencial)']]},{k:'atividade',l:'Atividade (se comercial)'},
   {k:'data_chaves',l:'Entrega das chaves (se diferente do início)',t:'date'},{k:'primeiro_vencimento',l:'1º vencimento (em branco = calcula sozinho)',t:'date'},
   {k:'saida_sem_multa_marcos',l:'Pode sair sem multa a cada 12 meses (12º, 24º, 36º…)',t:'chk',d:true},{k:'mobiliado',l:'Imóvel mobiliado',t:'chk'},
+  {k:'clausulas_extras',l:'Acordos especiais deste contrato (ex.: itens que o inquilino compra e são descontados do aluguel) — entram no contrato, um por linha',t:'area',w:1},
   {k:'obs',l:'Observações',t:'area',w:1}];
 async function modalLocacao(id,imovelId){let l={};if(id)l=(await api('loc/locacao/'+id)).locacao;const I=await api('loc/imoveis');
   const pp=await escolhePessoa('f_locatario_id','Inquilino');

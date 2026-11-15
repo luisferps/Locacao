@@ -86,6 +86,7 @@ export function criaLocacao({ q, json, log, arquivos }) {
       `alter table locacao.locacoes add column if not exists modalidade text not null default 'vencido'`,
       `alter table locacao.locacoes add column if not exists mobiliado boolean not null default false`,
       `alter table locacao.locacoes add column if not exists excecoes jsonb not null default '[]'`,
+      `alter table locacao.locacoes add column if not exists clausulas_extras text`,
     ]) await q(s);
     /* um contrato de administração pode cobrir vários imóveis do mesmo proprietário */
     await q(`create table if not exists locacao.administracao_imoveis(administracao_id int not null references locacao.administracoes(id) on delete cascade, imovel_id int not null references locacao.imoveis(id), primary key (administracao_id, imovel_id))`);
@@ -151,7 +152,7 @@ export function criaLocacao({ q, json, log, arquivos }) {
   const C_LOC = ['imovel_id', 'administracao_id', 'locatario_id', 'fiadores', 'garantia', 'garantia_info', 'caucao_valor', 'caucao_data', 'inicio', 'prazo_meses', 'dia_vencimento', 'aluguel', 'indice',
     'reajuste_fixo_pct', 'ultimo_reajuste', 'condominio_resp', 'iptu_resp', 'multa_rescisao', 'garantia_dados', 'outros_valor', 'outros_descricao', 'multa_pct', 'juros_mes_pct',
     'cobranca_pct', 'cobranca_dias', 'honorarios_pct', 'honorarios_dias', 'obs',
-    'finalidade', 'atividade', 'locatarios_extra', 'caucao_parcelas', 'data_chaves', 'primeiro_vencimento', 'saida_sem_multa_marcos', 'modalidade', 'mobiliado'];
+    'finalidade', 'atividade', 'locatarios_extra', 'caucao_parcelas', 'data_chaves', 'primeiro_vencimento', 'saida_sem_multa_marcos', 'modalidade', 'mobiliado', 'clausulas_extras'];
   const NUMS = ['aluguel_minimo', 'repasse_minimo', 'taxa_inicial_pct', 'multa_rescisao_pct_proprietario', 'multa_rescisao', 'area', 'taxa_valor', 'intermediacao_valor', 'caucao_valor', 'aluguel', 'reajuste_fixo_pct', 'condominio_valor', 'iptu_valor', 'outros_valor', 'multa_pct', 'juros_mes_pct', 'cobranca_pct', 'honorarios_pct'];
   const normaliza = b => { const o = { ...b }; for (const k of NUMS) if (k in o) o[k] = nb(o[k]); if ('documento' in o) o.documento = String(o.documento || '').replace(/\D/g, '') || null; return o; };
 
