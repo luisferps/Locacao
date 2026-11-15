@@ -624,7 +624,7 @@ export function criaLocacao({ q, json, log, arquivos }) {
         const buf = d && await arquivos.get(d.chave);
         if (!buf) return json({ erro: 'Arquivo não encontrado' }, 404);
         const ext = (d.nome.split('.').pop() || '').toLowerCase();
-        const ct = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }[ext] || 'application/octet-stream';
+        const ct = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', heic: 'image/heic', gif: 'image/gif', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }[ext] || 'application/octet-stream';
         return new Response(buf, { headers: { 'content-type': ct, 'content-disposition': `inline; filename="${encodeURIComponent(d.nome)}"` } });
       }
       if (a === 'documento' && id && m === 'DELETE') {
