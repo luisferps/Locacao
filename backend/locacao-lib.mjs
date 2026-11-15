@@ -505,8 +505,8 @@ export function criaLocacao({ q, json, log, arquivos }) {
         if (!x) return json({ erro: 'Lançamento não encontrado' }, 404);
         if (x.origem === 'pagamento' && !['adm', 'intermediacao'].includes(x.tipo)) return json({ erro: 'Esse lançamento veio do pagamento do inquilino: para mudar, desfaça o pagamento.' }, 409);
         if (m === 'DELETE') { await q(`delete from locacao.lancamentos where id=$1`, [id]); await log(real, 'loc_lancamento_excluido', { id, antes: x }); return json({ ok: true }); }
-        await q(`update locacao.lancamentos set competencia=coalesce($2,competencia), data=$3, tipo=coalesce($4,tipo), descricao=coalesce($5,descricao), valor=coalesce($6,valor) where id=$1`,
-          [id, limpa(b.competencia), limpa(b.data), TIPOS.includes(b.tipo) ? b.tipo : null, limpa(b.descricao), nb(b.valor)]);
+        await q(`update locacao.lancamentos set competencia=coalesce($2,competencia), data=$3, tipo=coalesce($4,tipo), descricao=coalesce($5,descricao), valor=coalesce($6,valor), documento_id=coalesce($7,documento_id) where id=$1`,
+          [id, limpa(b.competencia), limpa(b.data), TIPOS.includes(b.tipo) ? b.tipo : null, limpa(b.descricao), nb(b.valor), b.documento_id || null]);
         await log(real, 'loc_lancamento_alterado', { id }); return json({ ok: true });
       }
       if (a === 'repasse' && m === 'POST') {
