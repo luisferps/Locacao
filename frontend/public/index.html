@@ -57,6 +57,7 @@ label{font-size:12px;color:var(--mut);display:block;margin:0 0 3px}
 <main id="app"><div class="card">Carregando…</div></main>
 <div id="modal"></div><div id="modal2"></div>
 <script src="ferramentas/le-acerto-mensal.js"></script>
+<script src="ferramentas/contratos.js"></script>
 <script>
 const $=s=>document.querySelector(s), app=$('#app');
 const BASE=/^(localhost|127\.)/.test(location.hostname)?'':'https://locacao-production-7f7f.up.railway.app';
@@ -145,7 +146,7 @@ async function telaInicio(){
 }
 
 /* ---------- pessoas ---------- */
-const C_PES=[{k:'nome',l:'Nome completo',w:1},{k:'tipo',l:'Tipo',t:'sel',o:[['pf','Pessoa física'],['pj','Empresa']]},{k:'documento',l:'CPF / CNPJ'},{k:'rg',l:'RG'},{k:'estado_civil',l:'Estado civil'},{k:'profissao',l:'Profissão'},{k:'nascimento',l:'Nascimento',t:'date'},{k:'telefone',l:'Telefone principal'},{k:'email',l:'E-mail'},{k:'endereco',l:'Endereço',w:1},{k:'pix',l:'Chave Pix (para repasse)'},{k:'banco',l:'Banco / agência / conta'},{k:'obs',l:'Observações',t:'area',w:1}];
+const C_PES=[{k:'nome',l:'Nome completo',w:1},{k:'nacionalidade',l:'Nacionalidade (para o contrato)',d:'brasileiro(a)'},{k:'tipo',l:'Tipo',t:'sel',o:[['pf','Pessoa física'],['pj','Empresa']]},{k:'documento',l:'CPF / CNPJ'},{k:'rg',l:'RG'},{k:'estado_civil',l:'Estado civil'},{k:'profissao',l:'Profissão'},{k:'nascimento',l:'Nascimento',t:'date'},{k:'telefone',l:'Telefone principal'},{k:'email',l:'E-mail'},{k:'endereco',l:'Endereço',w:1},{k:'pix',l:'Chave Pix (para repasse)'},{k:'banco',l:'Banco / agência / conta'},{k:'obs',l:'Observações',t:'area',w:1}];
 let PES=[];
 async function telaPessoas(){PES=await api('loc/pessoas');
   app.innerHTML=voltar('')+`<div class="card"><div class="bt"><h3 style="margin:0;flex:1">Proprietários e inquilinos</h3><input id="bp" placeholder="Buscar por nome, CPF ou telefone" style="max-width:320px" oninput="desenhaPessoas()"><button class="pri" onclick="modalPessoa()">+ Novo cadastro</button></div></div><div class="cgrid" id="lp"></div>`;desenhaPessoas()}
@@ -168,7 +169,11 @@ async function escolhePessoa(idCampo,rotulo){PES=PES.length?PES:await api('loc/p
 const C_IMO=[{k:'apelido',l:'Nome do imóvel (como vocês chamam)',w:1},{k:'tipo',l:'Tipo',t:'sel',o:[['apartamento','Apartamento'],['casa','Casa'],['sala','Sala comercial'],['loja','Loja'],['galpao','Galpão'],['terreno','Terreno'],['kitnet','Kitnet / studio'],['outro','Outro']]},
   {k:'endereco',l:'Endereço',w:1},{k:'unidade',l:'Unidade / torre'},{k:'condominio',l:'Condomínio (nome)'},{k:'administradora',l:'Administradora do condomínio'},{k:'matricula',l:'Matrícula'},{k:'inscricao_iptu',l:'Inscrição do IPTU'},
   {k:'area',l:'Área (m²)',t:'number'},{k:'quartos',l:'Quartos',t:'number'},{k:'vagas',l:'Vagas',t:'number'},{k:'energia',l:'Energia (nº da unidade consumidora)'},{k:'agua',l:'Água (matrícula Saneago)'},{k:'gas',l:'Gás (nº do cliente)'},
-  {k:'extras_txt',l:'Garagens, box e escaninho com IPTU próprio (um por linha: descrição — inscrição)',t:'area',w:1},{k:'pasta',l:'Link da pasta no Drive',w:1},{k:'ativo',l:'Imóvel ativo na carteira',t:'chk',d:true},{k:'obs',l:'Observações',t:'area',w:1}];
+  {k:'extras_txt',l:'Garagens, box e escaninho com IPTU próprio (um por linha: descrição — inscrição)',t:'area',w:1},{k:'pasta',l:'Link da pasta no Drive',w:1},
+  {k:'finalidade',l:'Finalidade da locação',t:'sel',o:[['residencial','Residencial'],['comercial','Comercial (não residencial)']]},{k:'cidade',l:'Cidade',d:'Goiânia'},
+  {k:'descricao_contrato',l:'Descrição do imóvel para o contrato (unidade, vagas, empreendimento, endereço, quadra, lote, bairro, CEP)',t:'area',w:1},
+  {k:'aluguel_minimo',l:'Aluguel mínimo acordado com o proprietário (R$)',t:'number'},{k:'repasse_minimo',l:'Mínimo que o proprietário recebe por mês, já sem a taxa (R$)',t:'number'},
+  {k:'ativo',l:'Imóvel ativo na carteira',t:'chk',d:true},{k:'obs',l:'Observações',t:'area',w:1}];
 async function telaImoveis(){const I=await api('loc/imoveis');
   app.innerHTML=voltar('')+`<div class="card"><div class="bt"><h3 style="margin:0;flex:1">Imóveis</h3><button class="pri" onclick="modalImovel()">+ Novo imóvel</button></div></div>
   <div class="cgrid">${I.map(i=>`<div class="cb ${!i.ativo?'cinza':i.locacao?'verde':'amarelo'}" onclick="location.hash='imovel/${i.id}'"><b>${esc(i.apelido)}</b>
@@ -209,17 +214,25 @@ function desenhaImovel(){document.querySelectorAll('.abas button').forEach((b,i)
     el.innerHTML=`<div class="card"><div class="bt"><h3 style="margin:0;flex:1">Contrato de administração com o proprietário</h3><button class="pri" onclick="modalAdm()">+ Novo</button></div></div><div class="cgrid">${L.map(a=>`<div class="cb ${a.status==='ativo'?'verde':'cinza'}" onclick="modalAdm(${a.id})"><b>${a.status==='ativo'?'Ativo':'Encerrado'}</b>
       <span>Taxa: ${a.taxa_tipo==='fixo'?brl(a.taxa_valor)+' fixo':String(+a.taxa_valor).replace('.',',')+'% do aluguel'}${a.taxa_sobre_encargos?' (também sobre juros)':''}</span>
       <span class="mut">Intermediação (imobiliária): ${{aluguel:'1º aluguel inteiro',percentual:(+a.intermediacao_valor||0)+'% do aluguel',fixo:brl(a.intermediacao_valor),nenhuma:'não cobra'}[a.intermediacao_tipo]}</span>
-      <span class="mut">Desde ${dbr(a.inicio)} · repasse por ${esc(a.repasse_forma||'Pix')} ${esc(a.repasse_chave||'')}</span></div>`).join('')||'<div class="mut">Sem contrato de administração cadastrado: a taxa não é descontada sozinha.</div>'}</div>`}
+      <span class="mut">Desde ${dbr(a.inicio)} · repasse por ${esc(a.repasse_forma||'Pix')} ${esc(a.repasse_chave||'')}</span>${(a.imoveis||[]).length>1?`<span class="mut">Cobre: ${a.imoveis.map(x=>esc(x.apelido)).join(', ')}</span>`:''}
+      <div class="bt" style="margin-top:6px"><button onclick="event.stopPropagation();abreContrato('administracao',${a.id})">Contrato (gerar / editar)</button></div></div>`).join('')||'<div class="mut">Sem contrato de administração cadastrado: a taxa não é descontada sozinha.</div>'}</div>`}
   if(ABA==='loc'){el.innerHTML=`<div class="card"><div class="bt"><h3 style="margin:0;flex:1">Contratos de locação deste imóvel</h3>${IMO.locacoes.some(l=>l.status==='ativa')?'':`<button class="pri" onclick="modalLocacao(0,${i.id})">+ Nova locação</button>`}</div></div>
     <div class="cgrid">${IMO.locacoes.map(l=>`<div class="cb ${l.status==='ativa'?'verde':'cinza'}" onclick="location.hash='locacao/${l.id}'"><b>${esc(l.locatario)}</b><span>${brl(l.aluguel)} · dia ${l.dia_vencimento}</span><span class="mut">${dbr(l.inicio)} ${l.encerrada_em?'até '+dbr(l.encerrada_em):'— ativa'}</span></div>`).join('')||'<div class="mut">Nenhuma locação.</div>'}</div>`}
   if(ABA==='docs')desenhaDocs(el,'imovel',i.id,IMO.documentos)}
 
 const C_ADM=[{k:'inicio',l:'Início',t:'date'},{k:'fim',l:'Fim (se tiver)',t:'date'},{k:'taxa_tipo',l:'Taxa de administração',t:'sel',o:[['percentual','Percentual do aluguel'],['fixo','Valor fixo por mês']]},{k:'taxa_valor',l:'Taxa (% ou R$)',t:'number',d:10},
   {k:'taxa_sobre_encargos',l:'Cobrar a taxa também sobre juros e multa recebidos',t:'chk',d:true},{k:'intermediacao_tipo',l:'Intermediação (só registro: o cálculo é no sistema da imobiliária)',t:'sel',o:[['aluguel','1º aluguel inteiro'],['percentual','Percentual do 1º aluguel'],['fixo','Valor fixo'],['nenhuma','Não cobra']]},
-  {k:'intermediacao_valor',l:'Intermediação (% ou R$, se não for o aluguel inteiro)',t:'number'},{k:'repasse_forma',l:'Forma de repasse',t:'sel',o:['Pix','TED','Depósito'],d:'Pix'},{k:'repasse_chave',l:'Chave Pix / conta do proprietário'},{k:'status',l:'Situação',t:'sel',o:[['ativo','Ativo'],['encerrado','Encerrado']]},{k:'obs',l:'Observações',t:'area',w:1}];
-function modalAdm(id){const a=IMO.administracoes.find(x=>x.id===id)||{};
-  modal(`<h3>Contrato de administração</h3>${campos(C_ADM,a)}<div class="bt" style="margin-top:12px"><button class="pri" onclick="salvaAdm(${id||0})">Salvar</button><button onclick="fecha()">Cancelar</button></div>`)}
-async function salvaAdm(id){const b=coleta(C_ADM);b.imovel_id=IMO.imovel.id;b.proprietario_id=IMO.imovel.proprietario_id;await api('loc/administracao'+(id?'/'+id:''),{method:id?'PUT':'POST',body:b});fecha();ABA='adm';telaImovel(IMO.imovel.id)}
+  {k:'intermediacao_valor',l:'Intermediação (% ou R$, se não for o aluguel inteiro)',t:'number'},{k:'repasse_forma',l:'Forma de repasse',t:'sel',o:['Pix','TED','Depósito'],d:'Pix'},{k:'repasse_chave',l:'Chave Pix / conta do proprietário'},{k:'status',l:'Situação',t:'sel',o:[['ativo','Ativo'],['encerrado','Encerrado']]},
+  {k:'taxa_inicial_pct',l:'Taxa menor no começo (%) — se tiver',t:'number'},{k:'taxa_inicial_meses',l:'…durante quantos meses',t:'number'},
+  {k:'prazo_minimo_locacao',l:'Prazo mínimo das locações (meses)',t:'number',d:12},{k:'repasse_dias_uteis',l:'Repasse até quantos dias úteis após receber',t:'number',d:5},
+  {k:'multa_rescisao_pct_proprietario',l:'Multa de rescisão do inquilino: % que fica com o proprietário',t:'number',d:50},{k:'foro',l:'Foro (cidade)',d:'Goiânia'},
+  {k:'desconto_nao_reduz_taxa',l:'Desconto dado ao inquilino não reduz a taxa',t:'chk',d:true},
+  {k:'origem_imoveis',l:'Origem dos imóveis (escritura, matrícula) — sai no contrato',t:'area',w:1},{k:'obs',l:'Observações',t:'area',w:1}];
+async function modalAdm(id){const a=IMO.administracoes.find(x=>x.id===id)||{};const I=(await api('loc/imoveis')).filter(i=>i.proprietario_id&&i.proprietario_id===IMO.imovel.proprietario_id);
+  const marc=new Set((a.imoveis||[{id:IMO.imovel.id}]).map(x=>x.id));
+  modal(`<h3>Contrato de administração</h3><div class="card" style="background:#f8fafc"><b>Imóveis deste contrato</b> <span class="mut">(do mesmo proprietário)</span><div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px">${I.map(i=>`<label style="display:flex;gap:6px;align-items:center;color:var(--tx)"><input type="checkbox" class="adm_im" value="${i.id}" style="width:auto" ${marc.has(i.id)?'checked':''}> ${esc(i.apelido)}</label>`).join('')}</div></div>
+  <div style="margin-top:10px">${campos(C_ADM,a)}</div><div class="bt" style="margin-top:12px"><button class="pri" onclick="salvaAdm(${id||0})">Salvar</button>${id?`<button onclick="fecha();abreContrato('administracao',${id})">Contrato (gerar / editar)</button>`:''}<button onclick="fecha()">Cancelar</button></div>`)}
+async function salvaAdm(id){const b=coleta(C_ADM);b.imoveis=[...document.querySelectorAll('.adm_im:checked')].map(x=>+x.value);if(!b.imoveis.length)return aviso('Marque pelo menos um imóvel.');b.proprietario_id=IMO.imovel.proprietario_id;await api('loc/administracao'+(id?'/'+id:''),{method:id?'PUT':'POST',body:b});fecha();ABA='adm';telaImovel(IMO.imovel.id)}
 
 function modalLanc(id){const all=IMO.meses.flatMap(m=>[...m.lancamentos,...m.repasses]);const l=all.find(x=>x.id==id)||{competencia:hoje().slice(0,7),data:hoje(),tipo:'condominio'};
   modal(`<h3>${id?'Editar lançamento':'Lançar na conta do proprietário'}</h3><div class="f2">
@@ -278,32 +291,54 @@ const C_LOC=[{k:'inicio',l:'Início do contrato',t:'date'},{k:'prazo_meses',l:'P
   {k:'condominio_resp',l:'Condomínio',t:'sel',o:RESP,d:'inquilino'},{k:'iptu_resp',l:'IPTU',t:'sel',o:RESP,d:'inquilino'},
   {k:'outros_descricao',l:'Outro item fixo no boleto (descrição)'},{k:'outros_valor',l:'Outro item (R$)',t:'number'},
   {k:'multa_rescisao',l:'Multa se sair antes do prazo (nº de aluguéis, proporcional ao tempo que falta)',t:'number',d:3},{k:'multa_pct',l:'Multa por atraso (%)',t:'number',d:10},{k:'juros_mes_pct',l:'Juros ao mês (%)',t:'number',d:1},{k:'cobranca_pct',l:'Custo de cobrança (%)',t:'number',d:10},{k:'cobranca_dias',l:'…a partir de quantos dias',t:'number',d:10},
-  {k:'honorarios_pct',l:'Honorários de advogado (%)',t:'number',d:0},{k:'honorarios_dias',l:'…a partir de quantos dias',t:'number',d:30},{k:'obs',l:'Observações',t:'area',w:1}];
+  {k:'honorarios_pct',l:'Honorários de advogado (%)',t:'number',d:20},{k:'honorarios_dias',l:'…a partir de quantos dias',t:'number',d:20},
+  {k:'finalidade',l:'Finalidade',t:'sel',o:[['residencial','Residencial'],['comercial','Comercial (não residencial)']]},{k:'atividade',l:'Atividade (se comercial)'},
+  {k:'data_chaves',l:'Entrega das chaves (se diferente do início)',t:'date'},{k:'primeiro_vencimento',l:'1º vencimento (em branco = calcula sozinho)',t:'date'},
+  {k:'saida_sem_multa_marcos',l:'Pode sair sem multa a cada 12 meses (12º, 24º, 36º…)',t:'chk',d:true},{k:'mobiliado',l:'Imóvel mobiliado',t:'chk'},
+  {k:'obs',l:'Observações',t:'area',w:1}];
 async function modalLocacao(id,imovelId){let l={};if(id)l=(await api('loc/locacao/'+id)).locacao;const I=await api('loc/imoveis');
   const pp=await escolhePessoa('f_locatario_id','Inquilino');
   const g=l.garantia_dados||{};FIAD=(l.fiadores||[]).map(f=>({...f}));
   modal(`<h3>${id?'Contrato de locação':'Nova locação'}</h3><div class="f2"><div><label>Imóvel</label>${sel('f_imovel_id',[['','— escolha —'],...I.map(i=>[i.id,i.apelido])],l.imovel_id||imovelId||'')}</div><div>${pp}</div></div><div style="margin-top:10px">${campos(C_LOC,l)}</div>
+  <div class="card" style="background:#f8fafc;margin-top:12px"><b>Outros locatários no mesmo contrato</b> <span class="mut">(respondem juntos — ex.: casal)</span><div id="l_extra" style="margin-top:6px"></div>
+   <div class="bt" style="margin-top:6px"><select id="l_xsel" style="flex:1"><option value="">— escolha a pessoa —</option>${PES.map(p=>`<option value="${p.id}">${esc(p.nome)}${p.documento?' · '+esc(p.documento):''}</option>`).join('')}</select><button type="button" onclick="addExtra()">+ adicionar</button><button type="button" onclick="novaPessoaEm('l_xsel')">+ novo cadastro</button></div></div>
   <div class="card" style="background:#f8fafc;margin-top:12px"><b>Garantia</b>
    <div id="g_fiador" style="margin-top:8px"><label>Fiadores (do cadastro de pessoas)</label><div id="g_flist"></div><div class="bt" style="margin-top:6px"><select id="g_fsel" style="flex:1"><option value="">— escolha a pessoa —</option>${PES.map(p=>`<option value="${p.id}">${esc(p.nome)}${p.documento?' · '+esc(p.documento):''}</option>`).join('')}</select><button type="button" onclick="addFiador()">+ adicionar fiador</button><button type="button" onclick="novaPessoaEm('g_fsel')">+ novo cadastro</button></div></div>
    <div id="g_seguro" class="f2" style="margin-top:8px"><div><label>Seguradora</label><input id="g_seg" value="${esc(g.seguradora||'')}"></div><div><label>Nº da apólice</label><input id="g_apo" value="${esc(g.apolice||'')}"></div><div><label>Início da vigência</label><input id="g_ini" type="date" value="${g.inicio||''}"></div><div><label>Fim da vigência</label><input id="g_fim" type="date" value="${g.fim||''}"></div><div><label>Valor coberto</label><input id="g_cob" type="number" step="0.01" value="${g.valor_coberto||''}"></div></div>
    <div id="g_titulo" class="f2" style="margin-top:8px"><div><label>Nº do título</label><input id="g_tnum" value="${esc(g.titulo_numero||'')}"></div><div><label>Valor do título</label><input id="g_tval" type="number" step="0.01" value="${g.titulo_valor||''}"></div><div><label>Vencimento do título</label><input id="g_tfim" type="date" value="${g.titulo_fim||''}"></div></div>
-   <div id="g_caucao" class="f2" style="margin-top:8px"><div><label>Onde a caução está depositada (banco/conta poupança)</label><input id="g_cban" value="${esc(g.caucao_banco||'')}"></div></div>
+   <div id="g_caucao" class="f2" style="margin-top:8px"><div><label>Onde a caução está depositada (banco/conta poupança)</label><input id="g_cban" value="${esc(g.caucao_banco||'')}"></div>
+    <div><label>Caução em 2 vezes? 2ª parcela (R$)</label><input id="g_cp2v" type="number" step="0.01" value="${(l.caucao_parcelas||[])[1]?.valor||''}"></div><div><label>Data da 2ª parcela</label><input id="g_cp2d" type="date" value="${(l.caucao_parcelas||[])[1]?.data||''}"></div></div>
   </div>
   <div class="bt" style="margin-top:12px"><button class="pri" onclick="salvaLocacao(${id||0})">Salvar</button><button onclick="fecha()">Cancelar</button></div>`);
   if(l.locatario_id)$('#f_locatario_id').value=l.locatario_id;if(id)$('#f_imovel_id').disabled=true;
-  $('#f_garantia').onchange=mostraGarantia;mostraGarantia();desenhaFiadores()}
-let FIAD=[];
+  $('#f_garantia').onchange=mostraGarantia;mostraGarantia();desenhaFiadores();XLOC=[...(l.locatarios_extra||[])].map(Number);desenhaExtra()}
+let FIAD=[],XLOC=[];
+function desenhaExtra(){$('#l_extra').innerHTML=XLOC.map((id,i)=>`<div class="bt" style="margin-bottom:4px"><b style="flex:1">${esc((PES.find(p=>p.id===id)||{}).nome||'')}</b><button type="button" class="per" onclick="XLOC.splice(${i},1);desenhaExtra()">Remover</button></div>`).join('')||'<div class="mut">Só o inquilino principal.</div>'}
+function addExtra(){const id=+val('l_xsel');if(!id)return aviso('Escolha a pessoa');if(id===+val('f_locatario_id'))return aviso('Essa pessoa já é o inquilino principal');if(XLOC.includes(id))return aviso('Já está no contrato');XLOC.push(id);desenhaExtra()}
 function mostraGarantia(){const v=val('f_garantia');$('#g_fiador').style.display=v==='fiador'?'':'none';$('#g_seguro').style.display=v==='seguro_fianca'?'grid':'none';$('#g_titulo').style.display=v==='titulo'?'grid':'none';$('#g_caucao').style.display=v==='caucao'?'grid':'none'}
 function desenhaFiadores(){$('#g_flist').innerHTML=FIAD.map((f,i)=>`<div class="f2" style="margin-bottom:6px;align-items:end"><div><b>${esc(f.nome||(PES.find(p=>p.id==f.pessoa_id)||{}).nome||'')}</b></div><div><label>Imóvel dado em garantia</label><input value="${esc(f.imovel_garantia||'')}" oninput="FIAD[${i}].imovel_garantia=this.value"></div><div><label>Matrícula</label><input value="${esc(f.matricula||'')}" oninput="FIAD[${i}].matricula=this.value"></div><div><button type="button" class="per" onclick="FIAD.splice(${i},1);desenhaFiadores()">Remover</button></div></div>`).join('')||'<div class="mut">Nenhum fiador ainda.</div>'}
 function addFiador(){const id=+val('g_fsel');if(!id)return aviso('Escolha a pessoa');if(FIAD.some(f=>+f.pessoa_id===id))return aviso('Essa pessoa já é fiadora');FIAD.push({pessoa_id:id,nome:(PES.find(p=>p.id===id)||{}).nome});desenhaFiadores()}
 async function salvaLocacao(id){const b=coleta(C_LOC);if(!id){b.imovel_id=val('f_imovel_id');}b.locatario_id=val('f_locatario_id');
   b.fiadores=b.garantia==='fiador'?FIAD:[];
   b.garantia_dados={seguradora:val('g_seg')||null,apolice:val('g_apo')||null,inicio:val('g_ini')||null,fim:val('g_fim')||null,valor_coberto:val('g_cob')||null,titulo_numero:val('g_tnum')||null,titulo_valor:val('g_tval')||null,titulo_fim:val('g_tfim')||null,caucao_banco:val('g_cban')||null};
-  const r=await api('loc/locacao'+(id?'/'+id:''),{method:id?'PUT':'POST',body:b});fecha();location.hash='locacao/'+r.id;if(id)telaLocacao(id)}
+  b.locatarios_extra=XLOC;
+  if(b.garantia==='caucao'){const v2=+val('g_cp2v');b.caucao_parcelas=v2?[{valor:Math.round(((+b.caucao_valor||0)-v2)*100)/100,data:b.caucao_data||b.inicio},{valor:v2,data:val('g_cp2d')||null}]:[]}
+  const r=await enviaLocacao(id,b);if(!r)return;fecha();location.hash='locacao/'+r.id;if(id)telaLocacao(id)}
+/* trava do contrato de administração: se a locação contraria, avisa antes; só o administrador aprova a exceção */
+async function enviaLocacao(id,b){const url=BASE+'/api/loc/locacao'+(id?'/'+id:'');
+  const vai=async body=>{const r=await fetch(url,{method:id?'PUT':'POST',headers:{authorization:'Bearer '+TOKEN,'content-type':'application/json'},body:JSON.stringify(body)});return{st:r.status,d:await r.json().catch(()=>({erro:'Resposta inválida do servidor'}))}};
+  let {st,d}=await vai(b);
+  if(st===409&&d.precisa_aprovacao){
+    if(!d.pode_aprovar){aviso('Essa locação contraria o contrato de administração. Só o administrador pode aprovar.');return null}
+    if(!confirm('ATENÇÃO — o contrato de administração não permite isso:\n\n• '+d.conflitos.join('\n• ')+'\n\nVocê, como administrador, aprova essa exceção? (fica registrado)'))return null;
+    ({st,d}=await vai({...b,aprovar_excecao:true}))}
+  if(st===401){telaLogin(d?.erro);return null}
+  if(st>=400||d?.erro){aviso(d?.erro||'Erro');return null}
+  return d}
 let LOC=null;
 async function telaLocacao(id){LOC=await api('loc/locacao/'+id);const l=LOC.locacao;
   app.innerHTML=voltar('locacoes','← Contratos de locação')+`<div class="card"><div class="bt"><h3 style="margin:0;flex:1">${esc(l.apelido)} — ${esc(l.locatario)}</h3>
-   <button onclick="location.hash='imovel/${l.imovel_id}'">Conta do proprietário</button><button onclick="modalLocacao(${l.id})">Editar contrato</button>${l.status==='ativa'?`<button onclick="modalGerar(${l.id})">Gerar cobrança</button><button class="per" onclick="modalEncerrar(${l.id})">Encerrar locação</button>`:''}</div>
+   <button onclick="location.hash='imovel/${l.imovel_id}'">Conta do proprietário</button><button onclick="modalLocacao(${l.id})">Editar contrato</button><button onclick="abreContrato('locacao',${l.id})">Contrato (gerar / editar)</button>${l.status==='ativa'?`<button onclick="modalGerar(${l.id})">Gerar cobrança</button><button class="per" onclick="modalEncerrar(${l.id})">Encerrar locação</button>`:''}</div>
    <div class="tot" style="margin-top:10px"><div><span class="mut">Aluguel</span><b>${brl(l.aluguel)}</b></div><div><span class="mut">Vencimento</span><b>dia ${l.dia_vencimento}</b></div>
    <div><span class="mut">Início · prazo</span><b>${dbr(l.inicio)} · ${l.prazo_meses||'—'} meses</b></div><div><span class="mut">Fim do prazo</span><b>${dbr(LOC.fim_prazo)}${l.status==='ativa'&&LOC.fim_prazo<=hoje()?' · <span class="tag am">prazo indeterminado</span>':''}</b></div><div><span class="mut">Garantia</span><b>${esc({caucao:'Caução',fiador:'Fiador',seguro_fianca:'Seguro-fiança',titulo:'Título',sem_garantia:'Sem garantia'}[l.garantia]||l.garantia||'—')}${+l.caucao_valor?' '+brl(l.caucao_valor):''}</b></div>
    <div><span class="mut">Próximo reajuste (${esc(l.indice)})</span><b>${l.status==='ativa'&&l.indice!=='sem'?dbr(LOC.proximo_reajuste):'—'}</b></div><div><span class="mut">Situação</span><b>${l.status==='ativa'?'Ativa':'Encerrada em '+dbr(l.encerrada_em)}</b></div></div>
@@ -448,6 +483,46 @@ async function confirmaImport(bt){let im=val('i_im');const p=IMP.prep;
   finally{bt.disabled=false}}
 
 iniciar();
+
+/* ---------- contratos: gera pelo cadastro, edita como no Word, salva, baixa Word/PDF (mesmo jeito do Beira Rio) ---------- */
+let CT=null;
+const nomeArq=s=>String(s).replace(/[\\/:*?"<>|]/g,'').trim();
+async function abreContrato(ent,id){const d=await api('loc/contrato-dados/'+ent+'/'+id);
+  const gerado=ent==='locacao'?Contratos.htmlLocacao(d):Contratos.htmlAdministracao(d);
+  const titulo=ent==='locacao'?'Contrato de locação — '+(d.imovel?.apelido||'')+' — '+(d.locatarios?.[0]?.nome||''):'Contrato de administração — '+(d.proprietario?.nome||'');
+  CT={ent,id,d,gerado,titulo};
+  const falta=(d.texto?.html||gerado).match(/\[PREENCHER: [^\]]*\]/g)||[];
+  modal(`<div class="bt" style="align-items:center;position:sticky;top:0;background:var(--card);z-index:2;padding-bottom:8px;border-bottom:1px solid var(--ln)"><h3 style="flex:1;margin:0">${esc(titulo)}</h3>
+    <button title="Negrito" onmousedown="event.preventDefault();document.execCommand('bold')"><b>N</b></button><button title="Itálico" onmousedown="event.preventDefault();document.execCommand('italic')"><i>I</i></button><button title="Sublinhado" onmousedown="event.preventDefault();document.execCommand('underline')"><u>S</u></button>
+    <button onmousedown="event.preventDefault();document.execCommand('undo')">↶ Desfazer</button>${d.texto?'<button onclick="recriaContrato()">Recriar do cadastro</button>':''}<button onclick="fecha()">Fechar</button></div>
+   <div class="mut" style="margin:6px 0">${d.texto?`Versão editada, salva em ${new Date(d.texto.em).toLocaleString('pt-BR')}.`:'Gerado agora pelo cadastro, no modelo padrão.'} Clique no texto e edite como no Word. ${falta.length?`<b style="color:#b45309">${falta.length} campo(s) em amarelo para preencher</b> — melhor completar no cadastro e gerar de novo.`:''}</div>
+   <div id="ct_t" contenteditable="true" spellcheck="true" style="background:#fff;color:#111;font-family:Arial;font-size:13px;line-height:1.45;padding:40px 48px;border:1px solid var(--ln);box-shadow:0 2px 12px rgba(0,0,0,.08);min-height:60vh;text-align:justify">${d.texto?.html||gerado}</div>
+   <div class="bt" style="margin-top:10px;position:sticky;bottom:0;background:var(--card);padding-top:8px"><button class="pri" onclick="salvaContrato()">Salvar</button><button onclick="wordContrato()">Baixar Word</button><button onclick="pdfContrato()">Imprimir / PDF</button>
+    <button onclick="sobeAssinado()">Subir versão assinada</button></div>`);
+  const st=document.createElement('style');st.textContent='#ct_t h1{font-size:17px;text-align:center;margin:0 0 4px}#ct_t p{margin:0 0 8px}';$('#ct_t').prepend(st)}
+/* o texto editado não pode contradizer o cadastro: o que vale no sistema é o cadastro */
+function confereTexto(h){const txt=h.replace(/<[^>]+>/g,' ').replace(/\s+/g,' '),avisos=[];const d=CT.d,R=v=>'R$ '+(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  if(CT.ent==='locacao'){const l=d.locacao;if(!txt.includes(R(l.aluguel)))avisos.push('o aluguel do cadastro ('+R(l.aluguel)+') não aparece no texto');
+    if(!new RegExp('dia '+String(l.dia_vencimento).padStart(2,'0')+'\\b').test(txt))avisos.push('o dia de vencimento do cadastro ('+l.dia_vencimento+') não aparece no texto');
+    if(!txt.includes(dbr(l.inicio)))avisos.push('a data de início do cadastro ('+dbr(l.inicio)+') não aparece no texto');
+    if(l.garantia==='caucao'&&+l.caucao_valor&&!txt.includes(R(l.caucao_valor)))avisos.push('o valor da caução do cadastro ('+R(l.caucao_valor)+') não aparece no texto')}
+  else{const a=d.administracao;if(a.taxa_tipo==='fixo'?!txt.includes(R(a.taxa_valor)):!txt.includes(String(+a.taxa_valor).replace('.',',')+'%'))avisos.push('a taxa de administração do cadastro não aparece no texto')}
+  if(/\[PREENCHER:/.test(txt))avisos.push('ainda há campos [PREENCHER] no texto');return avisos}
+async function salvaContrato(){const h=$('#ct_t').innerHTML.replace(/<style>[\s\S]*?<\/style>/,'');const av=confereTexto(h);
+  if(av.length&&!confirm('Confira antes de salvar:\n\n• '+av.join('\n• ')+'\n\nSe mudou valor, prazo ou data, o certo é mudar no cadastro (é o cadastro que gera as cobranças). Salvar mesmo assim?'))return;
+  await api('loc/contrato-texto/'+CT.ent+'/'+CT.id,{method:'POST',body:{html:h}});CT.d.texto={html:h,em:new Date().toISOString()};aviso('Contrato salvo.')}
+async function recriaContrato(){if(!confirm('Descartar as edições e gerar o contrato de novo pelo cadastro?'))return;await api('loc/contrato-texto/'+CT.ent+'/'+CT.id,{method:'DELETE'});fecha();abreContrato(CT.ent,CT.id)}
+async function wordContrato(){aviso('Gerando o Word…');const h=$('#ct_t').innerHTML.replace(/<style>[\s\S]*?<\/style>/,'');const b=await Contratos.htmlParaDocx(h,CT.titulo);
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=nomeArq(CT.titulo)+'.docx';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000)}
+function pdfContrato(){const w=window.open('','_blank');const h=$('#ct_t').innerHTML.replace(/<style>[\s\S]*?<\/style>/,'');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(nomeArq(CT.titulo))}</title><style>body{font-family:Arial;font-size:13px;line-height:1.45;text-align:justify;margin:0}h1{font-size:17px;text-align:center;margin:0 0 4px}p{margin:0 0 8px}.pf{background:#fde68a}
+  .wm{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:330px;z-index:-1}.rod{position:fixed;bottom:0;left:0;right:0;text-align:center;font-size:10px;color:#888}@page{size:A4;margin:20mm}</style></head><body><img class="wm" src="${location.origin}${location.pathname.replace(/[^/]*$/,'')}ferramentas/wm.png"><div class="rod">${esc(CT.titulo)}</div>${h}<script>onload=()=>print()<\/script></body></html>`);w.document.close()}
+function sobeAssinado(){modal2(`<h3>Subir versão assinada / editada</h3><div class="mut">PDF ou foto. Fica em Documentos ${CT.ent==='locacao'?'da locação':'do imóvel'}.</div><input id="ct_f" type="file" accept="application/pdf,image/*" style="margin-top:8px">
+  <div class="bt" style="margin-top:12px"><button class="pri" onclick="enviaAssinado()">Enviar</button><button onclick="fecha2()">Cancelar</button></div>`)}
+async function enviaAssinado(){const f=$('#ct_f').files[0];if(!f)return aviso('Escolha o arquivo');
+  if(CT.ent==='locacao')await sobeArquivo(f,'locacao',CT.id,'Contrato de locação assinado');
+  else for(const im of CT.d.imoveis||[])await sobeArquivo(f,'imovel',im.id,'Contrato de administração');
+  fecha2();aviso('Arquivo guardado em Documentos.')}
 </script>
 </body>
 </html>
