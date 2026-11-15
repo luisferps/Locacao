@@ -6,6 +6,7 @@ import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { criaLocacao } from './locacao-lib.mjs';
 
 pg.types.setTypeParser(1082, v => v);
@@ -15,11 +16,12 @@ const pool = new pg.Pool({
   max: 5,
 });
 
-let ATOR = null;
+const ATOR = new AsyncLocalStorage(); /* quem está fazendo a ação, por requisição (vai para o registro interno) */
 async function q(sql, params = []) {
-  if (ATOR && /^\s*(insert|update|delete)/i.test(sql)) {
+  const ator = ATOR.getStore();
+  if (ator && /^\s*(insert|update|delete)/i.test(sql)) {
     const c = await pool.connect();
-    try { await c.query('begin'); await c.query(`select set_config('app.ator', $1, true)`, [ATOR]); const r = await c.query(sql, params); await c.query('commit'); return r.rows; }
+    try { await c.query('begin'); await c.query(`select set_config('app.ator', $1, true)`, [ator]); const r = await c.query(sql, params); await c.query('commit'); return r.rows; }
     catch (e) { await c.query('rollback').catch(() => null); throw e; } finally { c.release(); }
   }
   return (await pool.query(sql, params)).rows;
@@ -117,16 +119,14 @@ app.use('/api', async (req, res) => {
   const p = req.path.split('/').filter(Boolean);
   if (p[0] === 'eu') return res.json({ nome: u.nome, email: u.email, admin: u.role === 'admin' });
   const real = u.role === 'admin' ? 'luis' : 'usuario';
-  ATOR = u.email;
-  try {
+  return ATOR.run(u.email, async () => { try {
     const url = new URL(req.originalUrl, 'http://x');
     const r = await rotas(['loc', ...p.slice(p[0] === 'loc' ? 1 : 0)], req.method, req.body || {}, real, url);
     if (!r) return res.status(404).json({ erro: 'Rota não encontrada' });
     res.status(r.status);
     r.headers.forEach((v, k) => res.setHeader(k, v));
     res.end(Buffer.from(await r.arrayBuffer()));
-  } catch (e) { res.status(500).json({ erro: e.message }); }
-  finally { ATOR = null; }
+  } catch (e) { res.status(500).json({ erro: e.message }); } });
 });
 
 const PORT = process.env.PORT || 3001;

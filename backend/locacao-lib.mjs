@@ -50,7 +50,7 @@ export function criaLocacao({ q, json, log, arquivos }) {
       percentual numeric not null, valor_antes numeric, valor_depois numeric, memoria jsonb, por text, em timestamptz default now())`);
     await q(`create table if not exists locacao.documentos(id serial primary key, entidade text not null, entidade_id int not null, tipo text, nome text not null,
       chave text not null, bytes int, por text, em timestamptz default now())`);
-    /* guarda o antes e o depois de toda alteração e exclusão */
+    /* registro interno (sem tela): data e hora, quem fez, o que era antes e como ficou — inclusão, alteração e exclusão */
     await q(`create table if not exists locacao.auditoria(id bigserial primary key, em timestamptz default now(), tabela text, operacao text, registro text, ator text, antes jsonb, depois jsonb)`);
     await q(`create or replace function locacao.audita() returns trigger language plpgsql as $f$
       declare a jsonb; d jsonb; quem text := coalesce(nullif(current_setting('app.ator', true), ''), 'sistema');
@@ -58,14 +58,16 @@ export function criaLocacao({ q, json, log, arquivos }) {
         a := to_jsonb(OLD);
         if TG_OP = 'DELETE' then insert into locacao.auditoria(tabela, operacao, registro, ator, antes) values (TG_TABLE_NAME, 'exclusão', a->>'id', quem, a); return OLD; end if;
         d := to_jsonb(NEW);
+        if TG_OP = 'INSERT' then insert into locacao.auditoria(tabela, operacao, registro, ator, depois) values (TG_TABLE_NAME, 'inclusão', d->>'id', quem, d); return NEW; end if;
         if a is distinct from d then insert into locacao.auditoria(tabela, operacao, registro, ator, antes, depois) values (TG_TABLE_NAME, 'alteração', d->>'id', quem, a, d); end if;
         return NEW;
       exception when others then return coalesce(NEW, OLD);
       end $f$`);
     for (const t of ['pessoas', 'imoveis', 'administracoes', 'locacoes', 'mensalidades', 'lancamentos', 'reajustes', 'documentos'])
       await q(`do $d$ begin
-        if not exists (select 1 from pg_trigger where tgname = 'audita_loc_${t}') then
-          execute 'create trigger audita_loc_${t} after update or delete on locacao.${t} for each row execute function locacao.audita()';
+        if exists (select 1 from pg_trigger where tgname = 'audita_loc_${t}') then execute 'drop trigger audita_loc_${t} on locacao.${t}'; end if;
+        if not exists (select 1 from pg_trigger where tgname = 'registro_loc_${t}') then
+          execute 'create trigger registro_loc_${t} after insert or update or delete on locacao.${t} for each row execute function locacao.audita()';
         end if; end $d$`);
     ok = true;
   }
