@@ -8,8 +8,9 @@ const hojeBR = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10
 const ultimoDia = (a, m) => new Date(Date.UTC(a, m, 0)).getUTCDate();
 const compDe = d => String(d).slice(0, 7);
 const somaMes = (comp, n) => { const [a, m] = comp.split('-').map(Number); const d = new Date(Date.UTC(a, m - 1 + n, 1)); return d.toISOString().slice(0, 7); };
-/* vencimento no dia escolhido; se o mês não tem esse dia (ex.: 30 em fevereiro) cai no último dia do mês */
-const vencDe = (comp, dia) => { const [a, m] = comp.split('-').map(Number); return `${comp}-${String(Math.min(+dia, ultimoDia(a, m))).padStart(2, '0')}`; };
+/* vencimento no dia do contrato; se o mês não tem esse dia (ex.: 30 em fevereiro), a cobrança continua sendo
+   daquele mês, mas vence nos primeiros dias do mês seguinte (30/fev → 02/mar), nunca antes do dia do contrato */
+const vencDe = (comp, dia) => { const [a, m] = comp.split('-').map(Number); return new Date(Date.UTC(a, m - 1, +dia)).toISOString().slice(0, 10); };
 const addMeses = (data, n) => { const [a, m, d] = String(data).slice(0, 10).split('-').map(Number); const c = somaMes(`${a}-${String(m).padStart(2, '0')}`, n); return vencDe(c, d); };
 const diasEntre = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
 const SERIES = { 'IGP-M': 189, 'IPCA': 433, 'INPC': 188 };
